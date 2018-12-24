@@ -1,0 +1,4 @@
+$pfile "core/core.pkg"
+$pfile "core/filesystem.pkg"
+$pfile "core/zip.pkg"
+$pfile "core/engine.pkg"

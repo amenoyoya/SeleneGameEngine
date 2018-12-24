@@ -1,0 +1,176 @@
+// ※EditBoxを使う場合、SDL.App.settings.procedureは
+// 　SDL.editEventProcedure(もしくはそれを継承した関数)を指定しなければならない
+
+/*** EditBox用イベントプロシージャ ***/
+SDL.EditBox = :{
+	active = 0,		// 現在編集中のEditBox ID
+	objects = :{}	// EditBoxオブジェクト配列
+}
+
+def SDL.editEventProcedure(event){
+	if event.type == SDL.TEXTINPUT {
+		local obj = SDL.EditBox.objects[SDL.EditBox.active]
+		
+		if obj { // 入力されたテキストを挿入
+			obj.string->appendText(event.text.text)
+			if obj.string->getWidth() > obj.width + 2 { // 幅を超過した場合
+				// サイズが収まるようになるまで後ろから文字を消していく
+				while #obj.string > 0 and obj.string->getWidth() > obj.width + 2 {
+					obj.string->remove(#obj.string, 1)
+				}
+			}
+			obj.layer->beginScene()
+			SDL.clearScreen()
+			obj.string->draw(2, 2)
+			obj.layer->endScene()
+		}
+	}elif event.type == SDL.TEXTEDITING {
+		local obj = SDL.EditBox.objects[SDL.EditBox.active]
+		
+		if obj { // IMEデータを渡す
+			obj.edit.text = event.edit.text
+			obj.edit.cursor = event.edit.start
+			obj.edit.selection = event.edit.length
+		}
+	}
+	return SDL.defaultEventProcedure(event)
+}
+
+SDL.App.settings.procedure = SDL.editEventProcedure
+
+
+/*** EditBoxクラス(SingleLine) ***/
+// 直接生成することはない。SDL.EditBox::append, SDL.EditBox::removeを通して生成・破棄を行う
+local EditBox = class :{
+	constructor = def(@, w, h){
+		@.width = 0; @.height = 0; @.layer = SDL.Layer(); @.id = 0
+		@.edit = :{text = "", cursor = 0, selection = 0}
+		@.editFont = SDL.Font() // 日本語入力中のフォント
+		@.string = SDL.SingleLineText()
+		@.cnt = 0 // カーソル点滅用カウンタ
+		
+		if w and h { @->open(w, h) }
+	},
+	
+	open = def(@, w, h){
+		@.width, @.height = w, h
+		@->close()
+		@.layer->open(w*2, h*2)
+		@.string.writer->setFontStyle:{
+			name = SDL.App.settings.fontName, size = 14
+		}
+		@.string.writer->setDrawStyle:{
+			color = SDL.Color(0,0,0), edge = false
+		}
+		if !@.editFont->open(SDL.App.settings.fontName, 14) {
+			error("[EditBox]failed to create font'"..SDL.App.settings.fontName..", 14'")
+		}
+		@.editFont->setStyle(SDL.FONT_UNDERLINE) // 日本語入力中のフォントにはアンダーライン
+		@.id = tonumber(tostring(@.layer)->match"0x%x+")
+	},
+	
+	close = def(@){
+		@.string->clear()
+		if @.layer { @.layer->close() }
+		if @.editFont { @.editFont->close() }
+	},
+	
+	draw = def(@, x, y){
+		if @.layer {
+			SDL.fillRectangle(x, y, @.width, @.height, SDL.Color(255,255,255))
+			SDL.drawRectangle(x, y, @.width, @.height, SDL.Color(0,0,0))
+			@.layer->draw(x, y, @.width, @.height, 0, 0, @.width, @.height)
+			
+			if @->isActive() { // アクティブな時の処理
+				if @.edit.text == "" { // 通常カーソル表示
+					// カーソル移動
+					if SDL.getKey"LEFT" % 2 == 1 { @.string->seek(-1) }
+					elif SDL.getKey"RIGHT" % 2 == 1 { @.string->seek(1) }
+					
+					local px, py = @.string.pos.x, @.string.pos.y
+					
+					// BackSpace
+					if SDL.getKey(SDL.KEY_BACKSPACE) % 2 == 1 {
+						if @.string.index > 0 {
+							@.string->remove(@.string.index, 1)
+							// 更新
+							@.layer->beginScene()
+							SDL.clearScreen()
+							@.string->draw(2, 2)
+							@.layer->endScene()
+						}
+					}
+					if px + 2 < @.width and @.cnt % 60 < 30 { // カーソル表示
+						SDL.drawLine(x+px+2, y+py+2, x+px+2, y+py+15, 
+							SDL.getImmOpenStatus(SDL.App.window->getNativeHandle()) and SDL.Color(200,50,0) or SDL.Color(0,0,100))
+					}
+				}else{ // 日本語編集中の表示
+					local size = 0
+					local px, py = @.string.pos.x, @.string.pos.y
+					
+					if @.edit.cursor > 0 { size = @.editFont->getWidth(@.edit.text->u8sub(1, @.edit.cursor)) }
+					SDL.fillRectangle(x+px+2, y+py+2, @.editFont->getWidth(@.edit.text), 13, SDL.Color(200,200,200))
+					SDL.drawText(x+px+2, y+py+2, @.edit.text, SDL.Color(0,0,0), @.editFont)
+					if @.cnt % 60 < 30 { // カーソル表示
+						SDL.drawLine(x+px+2+size, y+py+2, x+px+2+size, y+py+15, SDL.Color(200,50,0))
+					}
+				}
+				@.cnt = @.cnt + 1
+			}
+			// マウスクリックによるアクティブ化・非アクティブ化
+			if SDL.isMouseIn(x, y, @.width, @.height) {
+				if SDL.getMouse(SDL.MOUSE_LEFT) == 1 or SDL.getMouse(SDL.MOUSE_RIGHT) == 1 {
+					@->activate(true) // アクティブ化
+					// クリック位置までシーク
+					@.string->seek(0, SEEK_SET)
+					for i = 1, #@.string {
+						if math.abs(SDL.getMouse"X"-(x+@.string[i].x)) < 6 { break }
+						@.string->seek(1)
+					}
+				}
+			}else{
+				if SDL.getMouse(SDL.MOUSE_LEFT) == 1 or SDL.getMouse(SDL.MOUSE_RIGHT) == 1 {
+					@->activate(false) // 非アクティブ化
+				}
+			}
+		}
+	},
+	
+	/* アクティブ化・非アクティブ化 */
+	// flag=falseで非アクティブ化
+	activate = def(@, flag){
+		if flag {
+			SDL.EditBox.active = @.id
+			SDL.startTextInput()
+		}else{
+			if @->isActive() {
+				SDL.EditBox.active = 0
+				SDL.stopTextInput()
+			}
+		}
+		@.cnt = 0
+	},
+	
+	/* 入力文字列取得 */
+	getText = def(@){ return @.string->getText() },
+	/* アクティブ状態取得 */
+	isActive = def(@){ return SDL.EditBox.active == @.id },
+}
+
+
+/*** EditBox公開関数 ***/
+// EditBoxを生成する
+// 戻り値として得られるオブジェクトをdrawすることでEditBoxの処理を行える
+def SDL.EditBox->append(w, h){
+	local obj = EditBox(w, h)
+	@.objects[obj.id] = obj
+	return obj
+}
+
+// EditBoxを破棄する場合、closeメソッドではなく必ずこの関数を使用する
+def SDL.EditBox->remove(obj){
+	if @.objects[obj.id] {
+		@.objects[obj.id] = nil
+		obj->close()
+	}
+}

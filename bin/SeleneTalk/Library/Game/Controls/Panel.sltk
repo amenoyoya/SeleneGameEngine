@@ -1,0 +1,85 @@
+/*** スクロールパネルクラス ***/
+SDL.ScrollPanel = class :{
+	// texture: パネルレイヤー(SDL.Texture)
+	// width, height: パネル表示サイズ
+	// [x,y]PixelsPerScroll: スクロール一回あたりパネルレイヤーを何ピクセル動かすか
+	constructor = def(@, texture, width, height, xPixelsPerScroll, yPixelsPerScroll){
+		@.texture = texture // パネルレイヤー
+		@.scrollbarV, @.scrollbarH = SDL.ScrollbarV(), SDL.ScrollbarH()
+		@.vertical, @.horizontal = false, false // 縦横スクロールバー表示フラグ
+		@.width, @.height = width or 0, height or 0 // パネル表示サイズ
+		@.shiftX, @.shiftY = 1, 1 // スクロール一回当たりのパネルの移動量(pixel)
+		
+		if xPixelsPerScroll and yPixelsPerScroll {
+			@->setup(xPixelsPerScroll, yPixelsPerScroll)
+		}
+	},
+	
+	/* スクロールパネル作成 */
+	// [x,y]PixelsPerScroll: スクロール一回あたりパネルレイヤーを何ピクセル動かすか
+	setup = def(@, xPixelsPerScroll, yPixelsPerScroll){
+		if !@.texture { return false }
+		
+		local w, h = @.texture->getWidth(), @.texture->getHeight()
+		// 以前のスクロールバー位置を保存しておく
+		local vpos, hpos = @.scrollbarV.bar.pos, @.scrollbarH.bar.pos
+		
+		if !xPixelsPerScroll or xPixelsPerScroll <= 0 { xPixelsPerScroll = 1 }
+		if !yPixelsPerScroll or yPixelsPerScroll <= 0 { yPixelsPerScroll = 1 }
+		@.shiftX = (xPixelsPerScroll > w and w or xPixelsPerScroll)
+		@.shiftY = (yPixelsPerScroll > h and h or yPixelsPerScroll)
+		
+		// パネル表示サイズがパネルレイヤーより大きい場合は，パネルレイヤーサイズに合わせる
+		if @.width > w { @.width = w }
+		if @.height > h { @.height = h }
+		
+		// スクロール回数は((レイヤーサイズ-表示サイズ)/pixelsPerScroll)
+		local xScrollNum = (w - @.width) $ xPixelsPerScroll
+		local yScrollNum = (h - @.height) $ yPixelsPerScroll
+		
+		// スクロールバーの設定
+		if xScrollNum > 0 and yScrollNum > 0 {
+			@.horizontal, @.vertical = true, true
+			@.scrollbarH->open(@.width, xScrollNum)
+			@.scrollbarV->open(@.height, yScrollNum)
+		}elif xScrollNum > 0 {
+			@.horizontal, @.vertical = true, false
+			@.scrollbarH->open(@.width, xScrollNum)
+		}elif yScrollNum > 0 {
+			@.horizontal, @.vertical = false, true
+			@.scrollbarV->open(@.height, yScrollNum)
+		}else{
+			@.horizontal, @.vertical = false, false
+		}
+		// スクロールバー位置を復元
+		@.scrollbarV->scroll(vpos)
+		@.scrollbarH->scroll(hpos)
+		return true
+	},
+	
+	/* パネル表示 */
+	draw = def(@, x, y){
+		if @.texture {
+			// パネルレイヤー描画
+			@.texture->draw(x, y, @.width, @.height, 
+				-@->getPanelX(), -@->getPanelY(), @.width, @.height)
+		}
+		if @.vertical {
+			// 縦スクロールバー描画
+			@.scrollbarV->draw(x + @.width, y)
+			// マウスホイールでのスクロール
+			if SDL.isMouseIn(x, y, @.width, @.height) { @.scrollbarV->scroll(SDL.getMouse"WheelY") }
+		}
+		if @.horizontal {
+			// 横スクロールバー描画
+			@.scrollbarH->draw(x, y + @.height)
+			// マウスホイールでのスクロール
+			if SDL.isMouseIn(x, y, @.width, @.height) { @.scrollbarH->scroll(SDL.getMouse"WheelX") }
+		}
+	},
+	
+	/* スクロールしたパネルの位置 */
+	// = -1 * パネルレイヤーのsrcX, srcY
+	getPanelX = def(@){ return @.horizontal and -@.scrollbarH.bar.pos * @.shiftX or 0 },
+	getPanelY = def(@){ return @.vertical and -@.scrollbarV.bar.pos * @.shiftY or 0 },
+}

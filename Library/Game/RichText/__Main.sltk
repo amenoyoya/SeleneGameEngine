@@ -1,0 +1,162 @@
+require "../../Parser"
+require "../App/__Main"
+require "Writer"
+require "SingleLineText"
+
+local DefaultParser = require "MarkupParser"
+
+/*** RichChar配列(複数行) ***/
+// SDL.RichTextは全てappendし終わった後、描画する前に必ずalignPositionsして位置を調整する必要がある
+SDL.RichText = class :{
+	// parser: lpeg.Parserを継承したクラス（コンストラクタでSDL.RichTextを受け取るもの）を指定
+	constructor = def(@, parser){
+		@.lines = :{} // SingleLineTextの配列
+		@.writer = SDL.RichTextWriter() // フォントスタイル，描画スタイル管理オブジェクト
+		@.width, @.height = 0, 0 // 描画に必要なサイズ
+		@.vertical = false // 縦書きモード
+		@.lineSpacing = 3 // 行間
+		@.align = 0 // 文字揃えモード 0:左揃え、 1:中央揃え、 2:右揃え
+		@.parser = parser and parser(@) or DefaultParser.Parser(@) // マークアップ用パーサー
+		// 最初の行を追加する
+		@->feedLine() // 現在編集中の行は @.cur
+	},
+	
+	/* 行スタイルを変更 */
+	setLineStyle = def(@, style){
+		if style.vertical != nil {
+			@.vertical = style.vertical
+			@.cur.vertical = @.vertical
+		}
+		if style.lineSpacing != nil {
+			@.lineSpacing = style.lineSpacing
+			@.cur.lineSpacing = @.lineSpacing
+		}
+		if style.align != nil {
+			@.align = style.align
+			@.cur.align = @.align
+		}
+	},
+	
+	/* すべての行を削除 */
+	clear = def(@){
+		for i = 1, #@.lines { @.lines[i]->clear() }
+		@.lines, @.width, @.height = :{}, 0, 0
+		@->feedLine() // 最初の行
+	},
+	
+	/* 現在編集中の行に対する処理を行う */
+	// funcName: SDL.SingleLineTextのメソッド名
+	call = def(@, funcName, ...){
+		local func = @.cur[funcName]
+		if func {
+			func(@.cur, ...)
+			if funcName->sub(1, 6) == "append" { // 何か追加したらサイズ更新
+				if @.vertical {
+					if @.height < @.cur.height { @.height = @.cur.height }
+				}else{
+					if @.width < @.cur.width { @.width = @.cur.width }
+				}
+			}
+		}
+	},
+	
+	/* 改行（SDL.SingleLineTextを追加）*/
+	feedLine = def(@){
+		local line = SDL.SingleLineText(@.vertical, @.writer)
+		@.lines[#@.lines + 1] = line
+		line.align = @.align
+		line.spacing = @.lineSpacing
+		line.firstFontSize = @.writer.fontSize // 空行処理用
+		@.cur = line
+	},
+	
+	/* マークアップによるRichText作成 */
+	parse = def(@, text){
+		@.parser->parse(text)
+	},
+	
+	/* 描画を行う前にRichChar配列の位置を揃える */
+	// stand: 文字位置(x,y)の基準[=2]． 0=上(左)、1=中央、2=下(右)
+	// alignBaseSize: 行(列)を寄せる時の基準サイズ．寄せ方は @.align で指定したもの
+	alignPositions = def(@, stand, alignBaseSize){
+		local x, y = 0, 0
+		
+		if !alignBaseSize { // baseSizeが指定されない場合は、行(列)の最大サイズとする
+			alignBaseSize = (@.vertical and @.height or @.width)
+		}
+		@.width, @.height = 0, 0 // 描画に必要なサイズをついでに計算
+		if @.vertical { // 縦書モードの場合後ろの列から計算
+			for i = #@.lines, 1, -1 {
+				local v = @.lines[i]
+				
+				if #v == 0 { // 空行
+					x = x + v.firstFontSize + v.spacing
+					@.width = @.width + v.firstFontSize + v.spacing
+				}else{
+					v->alignPositions(x, y, stand, v.align, alignBaseSize)
+					x = x + v.width + v.rubySize + v.spacing
+					@.width = @.width + v.width + v.rubySize + v.spacing
+					if @.height < v.height { @.height = v.height }
+				}
+			}
+		}else{ // 横書モード
+			for i = 1, #@.lines {
+				local v = @.lines[i]
+				
+				if #v == 0 { // 空行
+					y = y + v.firstFontSize + v.spacing
+					@.height = @.height + v.firstFontSize + v.spacing
+				}else{
+					v->alignPositions(x, y, stand, v.align, alignBaseSize)
+					y = y + v.height + v.rubySize + v.spacing
+					@.height = @.height + v.height + v.rubySize + v.spacing
+					if @.width < v.width { @.width = v.width }
+				}
+			}
+		}
+	},
+	
+	/* 描画 */
+	draw = def(@, x, y, alpha){
+		for i = 1, #@.lines { @.lines[i]->draw(x, y, alpha) }
+	},
+	
+	/* 描画に必要なサイズを取得 */
+	// alignPostions後でないと取得できない
+	getWidth = def(@){ return @.width },
+	getHeight = def(@){ return @.height },
+	
+	/* プレーンテキストを取得 */
+	getText = def(@){
+		local text = ""
+		for i = 1, #@.lines { text = text..@.lines[i]->getText() }
+		return text
+	},
+}
+
+
+/*** RichTextを書き込んだレイヤー ***/
+// marginX, marginY: レイヤーのどの位置に書き込むか[=1,1]
+// parser: lpeg.Parserを継承したクラス（コンストラクタでSDL.RichTextを受け取るもの）を指定
+// stand: 文字位置(x,y)の基準[=2]． 0=上(左)、1=中央、2=下(右)
+// alignBaseSize: 行(列)を寄せる時の基準サイズ．寄せ方は @.align で指定したもの
+local def open(@, text, marginX, marginY, parser, stand, alignBaseSize){
+	local rt = SDL.RichText(parser)
+	
+	marginX, marginY = marginX or 1, marginY or 1
+	rt->parse(text)
+	rt->alignPositions(stand, alignBaseSize)
+	@->Layer_open(rt->getWidth() + marginX * 2, rt->getHeight() + marginY * 2)
+	@->beginScene()
+	rt->draw(marginX, marginY)
+	@->endScene()
+	rt->clear()
+}
+
+def SDL.TextLayer(text, marginX, marginY, parser, stand, alignBaseSize){
+	local @ = SDL.Layer()
+	
+	@.Layer_open, @.open = @.open, open
+	if type(text) == 'string' { @->open(text, marginX, marginY, parser, stand, alignBaseSize) }
+	return @
+}

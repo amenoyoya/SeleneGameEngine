@@ -1,0 +1,73 @@
+/*** 2Dマップ編集テーブル ***/
+SDL.Map.Editor = :{
+	x = 0, y = 0, // マップ位置
+	tileWidth = 16, tileHeight = 16, // タイルサイズ
+	xNum = 40, yNum = 30, // タイル数
+	char = :{ x = 0, y = 0 }, // 主人公 {texture, __texture, x, y}
+	tiles = :{}, // タイル配列 {texture, __texture, wall}
+	events = :{}, // イベントタイル配列 {texture, __texture, x, y, action, __action, dx, dy, key, chdir, event, __event}}
+	scale = 1, // 縮尺
+	tile = nil, // 現在描画中のタイル
+	tileID = 0, // 抽出したタイルのID
+	mode = 0, // 編集モード（0: タイル設置，1: イベント設置，2: 主人公設置）
+}
+
+/* マップ編集 */
+// borderColor: マップの端に境界線を引きたい場合，その色を指定
+def SDL.Map.Editor->draw(borderColor){
+	// 左クリックでタイル設置，右クリックでタイル抽出
+	// タイルを削除するには @.tile に nil を指定してから左クリック
+	if SDL.getMouse(SDL.MOUSE_LEFT) > 0 or SDL.getMouse(SDL.MOUSE_RIGHT) > 0 {
+		local x = (SDL.getMouse"X" - @.x) $ (@.tileWidth * @.scale) + 1
+		local y = (SDL.getMouse"Y" - @.y) $ (@.tileHeight * @.scale) + 1
+		
+		if x > 0 and x <= @.xNum and y > 0 and y <= @.yNum {
+			if SDL.getMouse(SDL.MOUSE_LEFT) > 0 {
+				if @.mode == 0 { // タイル設置
+					@.tiles[(y-1) * @.xNum + x] = table.getclone(@.tile)
+				}elif @.mode == 1 { // イベント設置
+					local event = table.getclone(@.tile)
+					if event { event.x, event.y = x, y }
+					@.events[(y-1) * @.xNum + x] = event
+				}elif @.mode == 2 and @.tile { // 主人公設置
+					local char = table.getclone(@.tile)
+					if char { char.x, char.y = x, y }
+					@.char = char
+				}
+			} else {
+				if @.mode == 0 { @.tile = @.tiles[(y-1) * @.xNum + x] } // タイル抽出
+				elif @.mode == 1 { @.tile = @.events[(y-1) * @.xNum + x] } // イベント抽出
+				else { @.tile = @.char } // 主人公抽出
+				@.tileID = (y-1) * @.xNum + x // タイルID
+			}
+		}
+	}
+	
+	// マップスクロール
+	if SDL.getKey"LEFT" % 2 == 1 or SDL.getMouse"WheelX" < 0 { @.x = @.x + @.tileWidth * @.scale }
+	if SDL.getKey"RIGHT" % 2 == 1 or SDL.getMouse"WheelX" > 0 { @.x = @.x - @.tileWidth * @.scale }
+	if SDL.getKey"UP" % 2 == 1 or SDL.getMouse"WheelY" < 0 { @.y = @.y + @.tileHeight * @.scale }
+	if SDL.getKey"DOWN" % 2 == 1 or SDL.getMouse"WheelY" > 0 { @.y = @.y - @.tileHeight * @.scale }
+	
+	// マップ描画
+	for i = 1, @.xNum * @.yNum { // タイル，イベント描画
+		local tile = @.tiles[i] and @.tiles[i].texture
+		local event = @.events[i] and @.events[i].texture
+		
+		if tile {
+			tile->draw(@.x + (i-1) % @.xNum * @.tileWidth * @.scale,
+				@.y + (i-1) $ @.xNum * @.tileHeight * @.scale, @.tileWidth * @.scale, @.tileHeight * @.scale)
+		}
+		if event {
+			event->draw(@.x + (i-1) % @.xNum * @.tileWidth * @.scale,
+				@.y + (i-1) $ @.xNum * @.tileHeight * @.scale, @.tileWidth * @.scale, @.tileHeight * @.scale)
+		}
+	}
+	if @.char.texture { // 主人公描画
+		@.char.texture->draw(@.x + (@.char.x-1) * @.tileWidth * @.scale,
+			@.y + (@.char.y-1) * @.tileWidth * @.scale, @.tileWidth * @.scale, @.tileHeight * @.scale)
+	}
+	if borderColor {
+		SDL.drawRectangle(@.x, @.y, @.tileWidth * @.xNum * @.scale, @.tileHeight * @.yNum * @.scale, borderColor)
+	}
+}

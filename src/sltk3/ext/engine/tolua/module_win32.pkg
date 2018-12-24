@@ -1,0 +1,2 @@
+$pfile "win32/window.pkg"
+$pfile "win32/browser.pkg"

@@ -1,0 +1,64 @@
+/*** キーマッピング ***/
+SDL.App.keyMap = :{
+	// 上キー
+	UP = :{SDL.KEY_UP},
+	// 下キー
+	DOWN = :{SDL.KEY_DOWN},
+	// 左キー
+	LEFT = :{SDL.KEY_LEFT},
+	// 右キー
+	RIGHT = :{SDL.KEY_RIGHT},
+	// 決定キー
+	OK = :{SDL.KEY_RETURN, SDL.KEY_SPACE, SDL.KEY_Z},
+	// キャンセルキー
+	CANCEL = :{SDL.KEY_ESCAPE, SDL.KEY_X},
+	// Shiftキー
+	SHIFT = :{SDL.KEY_LSHIFT, SDL.KEY_RSHIFT},
+	// Skipキー
+	SKIP = :{SDL.KEY_LCTRL, SDL.KEY_RCTRL},
+	// サブキー1
+	SUB1 = :{SDL.KEY_LALT, SDL.KEY_RALT},
+	// サブキー2
+	SUB2 = :{SDL.KEY_TAB}
+}
+
+
+/*** キー・マウス入力状態取得 ***/
+/* ※直接 SDL.Window.key などを参照するほうが高速 */
+// キーマップに従って，キー押下状態取得
+def SDL.getKey(ID){
+	local ret = 0
+	local win = SDL.getDrawingWindow()
+	// アクティブウィンドウでない時は入力されていないことにする
+	if !win or win.activated != 2 { return 0 }
+	if !SDL.App.keyMap[ID] { return win.key[ID] }
+	for i = 1, #SDL.App.keyMap[ID] {
+		local v = win.key[SDL.App.keyMap[ID][i]]
+		if v > ret { ret = v }
+	}
+	return ret
+}
+
+// マウス状態取得
+def SDL.getMouse(ID){
+	local win = SDL.getDrawingWindow()
+	// アクティブウィンドウでない時は入力されていないことにする
+	if !win or win.activated != 2 {
+		if ID == 'X' or ID == 'Y' { return 0xffff } // アクティブウィンドウでないときのマウス位置は画面範囲外に
+		else { return 0 }
+	}
+	if type(ID) == 'string' { return win['mouse'..ID] }
+	return win.mouse[ID]
+}
+
+// マウスカーソル位置変更
+def SDL.warpMouse(x, y){
+	local win = SDL.getDrawingWindow()
+	if win and win.activated == 2 { win->warpMouse(x, y) }
+}
+
+// マウスカーソルが指定領域内にいるか
+def SDL.isMouseIn(x, y, w, h){
+	local cx, cy = SDL.getMouse"X", SDL.getMouse"Y"
+	return cx > x and cx < x + w and cy > y and cy < y + h
+}

@@ -1,0 +1,184 @@
+/* コルーチンの管理クラス */
+Routine = class :{
+	constructor = def(@){
+		@.coObjects = :{}	// コルーチンオブジェクト配列
+		@.count = 0			// 現在フレーム数
+	},
+	
+	operator = :{ /* 各ルーチンへのindexアクセスを可能に */
+		__newindex = def(@, id, obj){
+			if type(id) == 'number' {
+				if type(obj) == 'function' { // メインルーチンに追加
+					@->append(id, obj)
+				}elif obj == 0 { // ルーチンを初期化する
+					@->restore(id)
+				}elif obj == nil { // ルーチンから削除
+					@->remove(id)
+				}
+			}else{
+				rawset(@, id, obj)
+			}
+		},
+		__index = def(@, id){ // return false=dead, true=alive, nil=not exit
+			if type(id) == 'number' { return @->isAlive(id) }
+		},
+	},
+	
+	/* 指定idのルーチンのindexを取得 */
+	getIndex = def(@, id){
+		for i = 1, #@.coObjects {
+			if @.coObjects[i].id == id { return i }
+		}
+	},
+	
+	/* 関数を指定idのコルーチンに登録 */
+	append = def(@, id, func){
+		if type(id) != 'number' {
+			error"[Routine.append] 第1引数にはコルーチンを登録するIDを指定"
+		}
+		
+		local index = @->getIndex(id)
+		local obj = nil
+		
+		if index {
+			// すでに存在するidが指定された場合は上書き
+			obj = :{
+				id = id,			// ソート用id変数
+				func = func,		// 関数本体
+				waitStart = 0,		// フレームウェイトを開始したフレーム
+				wait = 0,			// ウェイトするフレーム数
+				alive = true,		// 実行可能か
+				coroutine = nil		// コルーチン化された関数本体
+			}
+			@.coObjects[index] = obj
+		}else{
+			// コルーチンの新規作成
+			obj = :{
+				id = id,			// ソート用id変数
+				func = func,		// 関数本体
+				waitStart = 0,		// フレームウェイトを開始したフレーム
+				wait = 0,			// ウェイトするフレーム数
+				alive = true,		// 実行可能か
+				coroutine = nil		// コルーチン化された関数本体
+			}
+			@.coObjects[#@.coObjects+1] = obj
+		}
+		// コルーチン化 //
+		obj.coroutine = coroutine.create(def(){ obj.func(@) })
+		// idが若い順にソート
+		table.sort(@.coObjects, def(a, b){ return a.id < b.id })
+		return obj
+	},
+	
+	/* 登録関数を削除 */
+	remove = def(@, id){
+		local key = @->getIndex(id)
+		if key { table.remove(@.coObjects, key) }
+	},
+	
+	/* 登録関数を全削除 */
+	clear = def(@){
+		@.coObjects = :{}
+		collectgarbage"collect"
+	},
+	
+	/* コルーチンを別のidに移動させる */
+	move = def(@, org_id, dest_id){
+		local key = @->getIndex(org_id)
+		if key == nil { return false }
+		
+		local target = @.coObjects[key]
+		// id変更
+		target.id = dest_id
+		// idが若い順にソート
+		table.sort(@.coObjects, def(a, b){ return a.id < b.id })
+	},
+	
+	/* 指定IDのルーチンを実行 */
+	executeID = def(@, id){
+		local i = @->getIndex(id)
+		local co = i and @.coObjects[i]
+		
+		if co and co.alive {
+			// 実行待機状態になっていなければ
+			if @.count - co.waitStart >= co.wait {
+				// 登録されている関数の実行
+				local ret, alive = coroutine.resume(co.coroutine)
+				
+				co.wait = 0 // 待機時間を0にしておく
+				// エラー発生
+				if !ret {
+					error("[Error in RoutineID:"..co.id.."] "..alive)
+				}
+				if alive == nil { // 終了したコルーチンのaliveをfalseに
+					co.alive = false
+				}elif type(alive) == 'number' { // ウェイトタイムを登録して実行待機状態に
+					co.waitStart = @.count
+					co.wait = alive
+				}
+			}
+		}
+	},
+	
+	/* ルーチンの実行 */
+	// condition: function(coroutineObject)->boolean
+	// 		ルーチン実行の条件を詳しく指定したい場合に設定
+	execute = def(@, condition){
+		// フレームカウントを+1
+		@.count = @.count + 1
+		// コルーチンの実行
+		for key, co in pairs(@.coObjects) {
+			local cond = true
+			
+			if condition { cond = condition(co) }
+			if co.alive and cond {
+				// 実行待機状態になっていなければ
+				if @.count - co.waitStart >= co.wait {
+					// 登録されている関数の実行
+					local ret, alive = coroutine.resume(co.coroutine)
+					
+					co.wait = 0 // 待機時間を0にしておく
+					// エラー発生
+					if !ret {
+						error("[Error in RoutineID:"..co.id.."] "..alive)
+					}
+					if alive == nil { // 終了したコルーチンのaliveをfalseに
+						co.alive = false
+					}elif type(alive) == 'number' { // ウェイトタイムを登録して実行待機状態に
+						co.waitStart = @.count
+						co.wait = alive
+					}
+				}
+			}
+		}
+	},
+	
+	/* コルーチン生存確認 */
+	// false: dead, true: alive, nil: not exist
+	isAlive = def(@, id){
+		local key = @->getIndex(id)
+		if key == nil { return nil }
+		
+		local target = @.coObjects[key]
+		if target.alive { return true }
+		return false
+	},
+	
+	/* 死亡中コルーチンを復活させる */
+	// あるいは生存中コルーチンを初期化する
+	restore = def(@, id){
+		local key = @->getIndex(id)
+		if key == nil { return false }
+		
+		local obj = @.coObjects[key]
+		obj.coroutine = coroutine.create(def(){ obj.func() })
+		obj.alive = true
+		return true
+	},
+}
+
+/* コルーチン実行を中断して処理を戻す */
+// frameに数値を指定した場合，frame数分だけ待機する
+def yield(frame){
+	coroutine.yield(frame == nil and true or frame)
+}

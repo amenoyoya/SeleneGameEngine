@@ -1,0 +1,169 @@
+require "Game/Core"
+
+local speed = 4
+local gameover, gameclear = false, false
+local bar = SDL.Layer()
+local ball = SDL.Layer()
+local block = :{}
+local blocks = :{}
+
+def bar->initialize(){
+	@->open(100, 14)
+	@.width, @.height = @->getWidth(), @->getHeight()
+	@.x = SDL.App.settings.width/2
+	@.y = SDL.App.settings.height-20-@.height/2
+	@->beginScene()
+	SDL.clearScreen()
+	SDL.fillRectangle(0, 0, @.width, @.height, SDL.Color(50,100,255))
+	SDL.fillRectangle(2, 2, @.width-4, @.height-4, SDL.Color(0,0,255))
+	@->endScene()
+}
+
+def bar->execute(){
+	@->drawCenter(@.x, @.y)
+	if SDL.getKey"LEFT" > 0 and @.x - speed > @.width / 2 { @.x = @.x - speed }
+	if SDL.getKey"RIGHT" > 0 and @.x + speed < SDL.App.settings.width - @.width / 2 { @.x = @.x + speed }
+	ball->collision(@)
+}
+
+def ball->initialize(){
+	@->open(18, 18)
+	@.width, @.height = @->getWidth(), @->getHeight()
+	@.x = SDL.App.settings.width/2
+	@.y = bar.y - 50
+	@.dx, @.dy = 3, -3
+	@->beginScene()
+	SDL.clearScreen()
+	SDL.drawText(0, 0, "●", SDL.Color(200,100,0))
+	@->endScene()
+}
+
+def ball->collision(target){
+	if math.abs(target.y-@.y) < @.height/2+target.height/2
+		and target.x+target.width/2 > @.x and target.x-target.width/2 < @.x
+	{
+		if @.x < target.x-target.width/2*2/3 {
+			@.dx, @.dy = -3, -@.dy
+		}elif @.x > target.x+target.width/2*2/3 {
+			@.dx, @.dy = 3, -@.dy
+		}else{
+			@.dy = -@.dy
+		}
+		return true
+	}
+	return false
+}
+
+def ball->move(){
+	@.x, @.y = @.x + @.dx, @.y + @.dy
+	if @.x < @.width / 2 {
+		@.x = @.width / 2
+		@.dx = -@.dx
+	}elif @.x > SDL.App.settings.width - @.width / 2 {
+		@.x = SDL.App.settings.width - @.width / 2
+		@.dx = -@.dx
+	}
+	if @.y < @.height / 2 {
+		@.y = @.height / 2
+		@.dy = -@.dy
+	}
+	if @.y > SDL.App.settings.height {
+		gameover = SDL.TextLayer("[style align='center'][font size=32, bold=true, color=SDL.Color(255,0,0)]GAME・OVER\n"
+			.."[font size=24, bold=false, color=SDL.Color(0,255,255)]再挑戦する場合は決定キー")
+	}
+}
+
+def ball->execute(){
+	@->move()
+	@->drawCenter(@.x, @.y)
+}
+
+def block->initialize(){
+	@.handle = SDL.Layer(100, 24)
+	@.width, @.height = @.handle->getWidth(), @.handle->getHeight()
+	@.broken, @.count = false, 0
+	@.handle->beginScene()
+	SDL.clearScreen()
+	SDL.fillRectangle(0, 0, @.width, @.height, SDL.Color(50,255,100))
+	SDL.fillRectangle(2, 2, @.width-4, @.height-4, SDL.Color(0,150,0))
+	@.handle->endScene()
+}
+
+def block->new(x, y){
+	local obj = table.getclone(@)
+	obj.x, obj.y = x, y
+	return obj
+}
+
+def block->execute(){
+	if !@.broken {
+		@.handle->drawCenter(@.x, @.y)
+		if ball->collision(@) { @.broken = true }
+	}elif @.count < 40 {
+		@.handle->setAlpha((255/40)*(40-@.count))
+		@.handle->drawCenter(@.x, @.y)
+		@.handle->setAlpha(255)
+		@.count = @.count + 1
+	}
+}
+
+def blocks->initialize(){
+	for i = 1, 12 {
+		@[i]= block->new(95+(50+100)*((i-1)%4), 50*(((i-1)$4)+1))
+	}
+}
+
+def blocks->execute(){
+	gameclear = true
+	for i = 1, 12 {
+		@[i]->execute()
+		if !@[i].broken { gameclear = false }
+	}
+}
+
+SDL.App.routine[1] = def(){
+	bar->initialize()
+	ball->initialize()
+	block->initialize()
+	blocks->initialize()
+	while true {
+		if gameclear == true {
+			gameclear = SDL.TextLayer("[style align='center'][font size=32, bold=true, color=SDL.Color(255,155,0)]Congratulations！！\n"
+				.."[font size=24, bold=false, color=SDL.Color(0,255,255)]再挑戦する場合は決定キー")
+		}elif gameclear {
+			bar->drawCenter(bar.x, bar.y)
+			ball->drawCenter(ball.x, ball.y)
+			gameclear->drawCenter(SDL.App.settings.width/2, SDL.App.settings.height/2)
+			if SDL.getKey"OK" == 1 { // 決定キーで最初から
+				gameover, gameclear = false, false
+				SDL.App.routine[1] = 0
+			}
+		}elif gameover {
+			bar->drawCenter(bar.x, bar.y)
+			blocks->execute()
+			ball->drawCenter(ball.x, ball.y)
+			gameover->drawCenter(SDL.App.settings.width/2, SDL.App.settings.height/2)
+			if SDL.getKey"OK" == 1 { // 決定キーで最初から
+				gameover, gameclear = false
+				SDL.App.routine[1] = 0
+			}
+		}else{
+			bar->execute()
+			blocks->execute()
+			ball->execute()
+		}
+		yield()
+	}
+}
+
+SDL.App.routine[100] = def(){
+	while true {
+		SDL.drawText(5, 5, "FPS: "..SDL.App.fpsManager->getFPS(), SDL.Color(255,0,0))
+		yield()
+	}
+}
+
+SDL.App->setup:{
+	title = "ブロック崩し", icon = "icon.png"
+}
+SDL.App->execute()

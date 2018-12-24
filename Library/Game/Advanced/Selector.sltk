@@ -1,0 +1,226 @@
+require "../Core"
+
+/* ～ 配列の巡回添字の算出方法 ～ */
+// [0],[1],...,[n] に対して d個ごとの要素を巡回的に取得：select = (select + d) % n
+// [1],[2],...,[n] に対して d個ごとの要素を巡回的に取得：select = (select + d - 1) % n + 1
+// マイナス方向に e個ごとの要素を巡回する場合，d = n - e として上記の計算を行えば良い
+
+/*** カーソルキーによる選択ができるボタングループ ***/
+// 基本的には別個に作ったボタンをグループ化するのに使う
+SDL.Selector = class:{
+	constructor = def(@, clickableGroup){
+		@.buttons = :{} // ボタングループ
+		@.select = 1 // 現在選択中のボタンインデックス
+		@.searchFlag = false // 現在選択中のボタンを探索するフラグ
+		@.oldMouseX, @.oldMouseY = 0, 0 // マウス位置が変わったかの確認用
+		if type(clickableGroup) == 'table' { @->appendGroup(clickableGroup) }
+	},
+	
+	/* ボタン(SDL.Clickable継承クラス)をカーソルキー選択のグループに追加 */
+	// x, y: ボタンの表示位置
+	append = def(@, clickable, x, y){
+		if x and y { clickable.x, clickable.y = x, y }
+		@.buttons[#@.buttons] = clickable
+	},
+	appendGroup = def(@, clickableGroup){
+		local n = #@.buttons
+		for i = 1, #clickableGroup {
+			@.buttons[n+i] = clickableGroup[i]
+		}
+	},
+	
+	/* ボタングループをクリア */
+	clear = def(@){
+		@.buttons = :{}
+		@.select = 0
+	},
+	
+	/* 追加されたすべてのボタンを描画 */
+	// カーソルキーによるボタンの選択処理を実行
+	draw = def(@){
+		local n = #@.buttons
+		local cx, cy = SDL.getMouse"X", SDL.getMouse"Y"
+		
+		// マウスが動いたらアクティブボタン探索フラグを立てる
+		if cx != @.oldMouseX or cy != @.oldMouseY {
+			@.oldMouseX, @.oldMouseY = cx, cy
+			@.searchFlag = true
+		}
+		// カーソルキー処理
+		if SDL.getKey"RIGHT" == 1 or SDL.getKey"DOWN" == 1 or SDL.getKey"LEFT" == 1 or  SDL.getKey"UP" == 1 {
+			if @.searchFlag { // アクティブボタン検索
+				@.searchFlag = false
+				for i = 1, n {
+					if @.buttons[i].active { @.select = i; break }
+				}
+			}
+			if SDL.getKey"DOWN" == 1 or SDL.getKey"RIGHT" == 1 { @.select = @.select % n + 1 }
+			elif SDL.getKey"UP" == 1 or SDL.getKey"LEFT" == 1 { @.select = (@.select + n - 2) % n + 1 }
+			// マウス移動
+			local btn = @.buttons[@.select]
+			SDL.warpMouse(btn.x + btn.width / 2, btn.y + btn.height / 2)
+			@.oldMouseX, @.oldMouseY = SDL.getMouse"X", SDL.getMouse"Y" // マウス位置更新
+		}
+		// ボタンを全て描画
+		for i = 1, n { @.buttons[i]->draw() }
+	},
+}
+
+
+// 項目の最大サイズを取得
+local def getMaxSize(items, n){
+	local maxWidth, maxHeight = 0, 0
+	
+	for i = 1, n {
+		local width, height = items[i]->getWidth(), items[i]->getHeight()
+		
+		if maxWidth < width { maxWidth = width }
+		if maxHeight < height { maxHeight = height }
+	}
+	return maxWidth, maxHeight
+}
+
+/*** ボタンリスト拡張ScrollPanel ***/
+// 各リスト項目の仮想関数は SelectorPanel.onItem～ でまとめて管理
+SDL.SelectorPanel = class(SDL.ScrollPanel):{
+	// x, y, width, height: パネルの表示位置とサイズ
+	constructor = def(@, x, y, width, height){
+		SDL.ScrollPanel.constructor(@, SDL.Layer(), width, height)
+		@.items = :{} // リスト項目
+		@.select = 1 // 現在選択中のボタンインデックス
+		@.searchFlag = false // 現在選択中のボタンを探索するフラグ
+		@.oldMouseX, @.oldMouseY = 0, 0 // マウス位置が変わったかの確認用
+		@.x, @.y = x or 0, y or 0 // パネル表示位置
+		@.xNum, @.yNum = 1, 1 // リストのx,y方向の数
+		@.itemWidth, @.itemHeight = 0, 0 // リスト項目の最大サイズ
+	},
+	
+	/* ボタンリストとScrollPanelの作成 */
+	// スクロール可能にするなら，open後にsetupも行う必要がある
+	// items: リスト項目配列（マークアップテキスト対応）
+	// xNum: リストのx方向の数
+	// [x,y]PixelsPerScroll: スクロール一回あたりパネルレイヤーを何ピクセル動かすか
+	// itemWidth, itemHeight: 1項目のサイズ（省略された場合は自動的に最大サイズの項目に合わせる）
+	open = def(@, items, xNum, xPixelsPerScroll, yPixelsPerScroll, itemWidth, itemHeight){
+		local n = #items
+		local methods = :{'Clicked', 'Pressed', 'Entered', 'Left'} // 各リスト項目の仮想関数
+		
+		@.xNum, @.yNum = xNum, math.ceil(n / xNum)
+		@->close()
+		for i = 1, n { // リスト項目からTextLayer作成
+			@.items[i] = SDL.TextLayer(items[i])
+		}
+		if !itemWidth or !itemHeight { // 項目の最大サイズ取得
+			itemWidth, itemHeight = getMaxSize(@.items, n)
+		}
+		@.itemWidth, @.itemHeight = itemWidth, itemHeight
+		// レイヤー作成
+		@.texture->open((itemWidth+10) * @.xNum, (itemHeight+4) * @.yNum)
+		// レイヤーにリスト書き込み＆リスト項目をボタン化
+		@.texture->beginScene()
+		for i = 1, n {
+			// 項目ごとにクリッカブルオブジェクト作成
+			local btn = SDL.Clickable(nil, ((i-1) % @.xNum) * (itemWidth + 10) + 2,
+				((i-1) $ @.xNum) * itemHeight + 2, @.items[i]->getWidth(), @.items[i]->getHeight())
+			
+			def btn.onDrawing(btn, x, y, w, h, status){
+				if status > 0 { // レイヤーに書き込まれているため通常描画は行わなくて良い
+					local px, py = @->getPanelX(), @->getPanelY()
+					// パネルの中の項目部分の位置・サイズを渡して onItemDraw メソッド呼び出し
+					@->onItemDraw(i, x, y, w, h, x - @.x - px, y - @.y - py, status)
+				}
+			}
+			// 項目の仮想関数を onItem～ で一括管理
+			for m = 1, 4 {
+				btn['on'..methods[m]] = def(btn, x, y, w, h){
+					local px, py = @->getPanelX(), @->getPanelY()
+					// パネルの中の項目部分の位置・サイズを渡して onItem～ メソッド呼び出し
+					@['onItem'..methods[m]](@, i, x-1, y-1, w, h, x - @.x - px, y - @.y - py)
+				}
+			}
+			@.items[i]->draw(btn.x, btn.y) // レイヤーにリスト項目書き込み
+			@.items[i] = btn // リスト項目をクリッカブルオブジェクトに
+		}
+		@.texture->endScene()
+		// スクロール設定
+		@->setup(xPixelsPerScroll or 1, yPixelsPerScroll or 1)
+	},
+	
+	/* ボタンリスト削除 */
+	close = def(@){
+		@.texture->close()
+		@.items = :{}
+		collectgarbage"collect"
+	},
+	
+	/* パネル描画 */
+	// カーソルキーによるリスト項目の選択処理も実行
+	// 表示位置は @.x, @.y で指定
+	draw = def(@){
+		local n = #@.items
+		local cx, cy = SDL.getMouse"X", SDL.getMouse"Y"
+		
+		// マウスが動いたらアクティブボタン探索フラグを立てる
+		if cx != @.oldMouseX or cy != @.oldMouseY {
+			@.oldMouseX, @.oldMouseY = cx, cy
+			@.searchFlag = true
+		}
+		// カーソルキー処理
+		if SDL.getKey"RIGHT" == 1 or SDL.getKey"DOWN" == 1 or SDL.getKey"LEFT" == 1 or  SDL.getKey"UP" == 1 {
+			if @.searchFlag { // アクティブボタン検索
+				@.searchFlag = false
+				for i = 1, n {
+					if @.items[i].active { @.select = i; break }
+				}
+			}
+			if SDL.getKey"RIGHT" == 1 { @.select = @.select % n + 1 }
+			elif SDL.getKey"DOWN" == 1 { @.select = (@.select + @.xNum - 1) % n + 1 }
+			elif SDL.getKey"LEFT" == 1 { @.select = (@.select + n - 2) % n + 1 }
+			elif SDL.getKey"UP" == 1 { @.select = (@.select + n - @.xNum - 1) % n + 1 }
+			// 選択した項目がパネル表示領域に入るまでスクロール
+			local item = @.items[@.select]
+			if @.horizontal {
+				while item.x + @.x + @->getPanelX() < @.x  { @.scrollbarH->scroll(-1) }
+				while item.x + @.x + @->getPanelX() + @.itemWidth > @.x + @.width { @.scrollbarH->scroll(1) }
+			}
+			if @.vertical {
+				while item.y + @.y + @->getPanelY() < @.y  { @.scrollbarV->scroll(-1) }
+				while item.y + @.y + @->getPanelY() + @.itemHeight > @.y + @.height { @.scrollbarV->scroll(1) }
+			}
+			// マウス移動
+			SDL.warpMouse(item.x + @.x + @->getPanelX() + item.width / 2, item.y + @.y + @->getPanelY() + item.height / 2)
+			@.oldMouseX, @.oldMouseY = SDL.getMouse"X", SDL.getMouse"Y" // マウス位置更新
+		}
+		// パネル描画
+		SDL.ScrollPanel.draw(@, @.x, @.y)
+		for i = 1, n { // パネルに合わせてリスト項目の表示位置（クリック可能位置）を計算
+			local item = @.items[i]
+			local x, y = item.x + @.x + @->getPanelX(), item.y + @.y + @->getPanelY()
+			local dx = x < @.x and item.x + @->getPanelX() or 0
+			local dy = y < @.y and item.y + @->getPanelY() or 0
+			local dw = x + item.width > @.x + @.width and x + item.width - (@.x + @.width) or 0
+			local dh = y + item.height > @.y + @.height and y + item.height - (@.y + @.height) or 0
+			item->draw(x - dx, y - dy, item.width + dx - dw, item.height + dy - dh)
+		}
+	},
+	
+	/* 仮想関数 */
+	// リスト項目アクティブ時の処理
+	onItemDraw = def(@, i, x, y, w, h, sx, sy, status){
+		@.texture->setBlendMode(SDL.BLEND_ADD)
+		@.texture->setColor(SDL.Color(30*status, 60*status, 120*status, 240))
+		@.texture->draw(x-1, y-1, w, h, sx, sy, w, h)
+		@.texture->draw(x+1, y+1, w, h, sx, sy, w, h)
+		@.texture->setBlendMode()
+		@.texture->setColor(SDL.Color(255,255,255))
+	},
+	
+	// リスト項目クリック時の処理
+	onItemClicked = def(@, i, x, y, w, h, sx, sy){},
+	// リスト項目押下時の処理
+	onItemPressed = def(@, i, x, y, w, h, sx, sy){},
+	// リスト項目アクティブ化時の処理
+	onItemEntered = def(@, i, x, y, w, h, sx, sy){},
+	// リスト項目非アクティブ化時の処理
+	onItemLeft = def(@, i, x, y, w, h, sx, sy){},
+}

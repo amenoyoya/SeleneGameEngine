@@ -1,0 +1,33 @@
+/*** 整数型定義 ***/
+typedef char			s8;
+typedef unsigned char	u8;
+typedef short			s16;
+typedef unsigned short	u16;
+typedef long			s32;
+typedef unsigned long	u32;
+
+namespace Sltk{
+	/*** ネットワーク通信クラス ***/
+	class Curl: public Sltk::Object {
+	public:
+		Curl();
+		~Curl();
+		
+		bool open();
+		void close();
+		
+		/* 各種設定 */
+		bool set(u32 option, const char *val);
+		bool set(u32 option, s32 val);
+		
+		// 設定をリセット
+		bool reset();
+		
+		/* ネットワーク接続(処理実行) */
+		// 現在の設定でネットワークに接続
+		bool execute();
+		
+		// 取得したデータの内容を返す
+		Sltk::Binary *getData();
+	};
+}

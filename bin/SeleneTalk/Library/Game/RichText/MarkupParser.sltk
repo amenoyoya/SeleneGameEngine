@@ -1,0 +1,155 @@
+/*** 標準のマークアップパーサー ***/
+local MarkupParser = :{
+	grammar = :{}, // 各種文法
+}
+
+// パーサークラス
+MarkupParser.Parser = class(lpeg.Parser):{ 
+	// rt: SDL.RichTextオブジェクト
+	// default: デフォルトスタイルテーブル
+	constructor = def(@, rt, default){
+		lpeg.Parser.constructor(@)
+		
+		@.default = :{ // デフォルトスタイル
+			fontName = SDL.App.settings.fontName, fontSize = 16, rubySize = 11,
+			color = SDL.Color(250,250,250),
+			edgeColor = SDL.Color(50,50,50), shadowColor = SDL.Color(50,50,50),
+		}
+		if default { table.copy(default, @.default) }
+		@.parent = rt // 親RichTextオブジェクト
+		@->compile() // パーサー生成
+		// デフォルトスタイルに変更
+		@.parent.writer->setFontStyle:{
+			name = @.default.fontName, size = @.default.fontSize, rubySize = @.default.rubySize,
+			bold = true // 太字のほうが見やすいため，デフォルトで太字にしておく
+		}
+		@.parent.writer->setDrawStyle:{
+			color = @.default.color, edgeColor = @.default.edgeColor, shadowColor = @.default.shadowColor
+		}
+	},
+	
+	compile = def(@){
+		lpeg.Parser.compile(@, MarkupParser.grammar, "\\") // エスケープ文字は"\"
+	},
+	
+	onTracked = def(@, fin, ch){ // 通常文字列の処理
+		@.parent->call('appendText', ch) // RichTextにappendTextする
+		return fin
+	},
+}
+
+/* 変数埋め込み {...} */
+MarkupParser.grammar.embedVariable = lpeg.C(lpeg.Bp("{", "}") / 0) * lpeg.Cp()
+def MarkupParser.Parser->embedVariable(capture, fin){
+	if @.escape { // エスケープされているならappendText
+		@.parent->call('appendText', capture)
+		return fin
+	}
+	@.parent->call('appendText', tostring(assert(loadstring("return "..capture->sub(2, -2)))()))
+	return fin
+}
+
+/* フォントスタイル変更 [font attr1=val1, attr2=val2, ...] */
+// attributes:	name="フォント名"/"default", size=フォントサイズ/"default",
+// 				rubySize=ルビフォントサイズ/"default",
+// 				bold=true/false, underLine=true/false, italic=true/false, strikeThrough=true/false
+// attributes:	edge=true/false, shadow=true/false,
+// 				color=SDL.Color/"default", shadowColor=SDL.Color/"default"
+MarkupParser.grammar.setFontStyle = lpeg.Tg("[", "]", "font") * lpeg.Cp()
+def MarkupParser.Parser->setFontStyle(capture, inner, fin){
+	if @.escape { // エスケープされているならappendText
+		@.parent->call('appendText', capture)
+		return fin
+	}
+	local style = assert(loadstring("return :{"..inner.."}"))()
+	// フォントスタイル変更
+	@.parent.writer->setFontStyle:{
+		name = style.name == "default" and @.default.fontName or style.name,
+		size = style.size == "default" and @.default.fontSize or style.size,
+		rubySize = style.rubySize == "default" and @.default.rubySize or style.rubySize,
+		bold = style.bold, underLine = style.underLine,
+		italic = style.italic, strikeThrough = style.strikeThrough,
+	}
+	// 描画スタイル変更
+	@.parent.writer->setDrawStyle:{
+		edge = style.edge, shadow = style.shadow,
+		color = style.color == "default" and @.default.color or style.color,
+		edgeColor = style.edgeColor == "default" and @.default.edgeColor or style.edgeColor,
+		shadowColor = style.shadowColor == "default" and @.default.shadowColor or style.shadowColor,
+	}
+	return fin
+}
+
+/* インライン画像を挿入 [graph file="ファイル名", ...] */
+// attributes:	file="画像ファイル名", width,height=拡大/縮小表示するなら指定
+// 				char=trueなら文字と同じ描画スタイルを使用
+// 				srcX,srcY,srcWidth,srcHeight=画像の一部のみを描画したい場合に指定
+MarkupParser.grammar.appendInlineImage = lpeg.Tg("[", "]", "graph") * lpeg.Cp()
+def MarkupParser.Parser->appendInlineImage(capture, inner, fin){
+	if @.escape { // エスケープされているならappendText
+		@.parent->call('appendText', capture)
+		return fin
+	}
+	local info = assert(loadstring("return :{"..inner.."}"))()
+	// 画像追加
+	@.parent->call('append', 1, def(i){
+		local img = SDL.Image(info.file)
+		local data = :{
+			texture = img, width = info.width or img->getWidth(), height = info.height or img->getHeight(),
+			graph = !info.char, srcX = info.srcX, srcY = info.srcY, srcWidth = info.srcWidth, srcHeight = info.srcHeight
+		}
+		return data
+	})
+	return fin
+}
+
+/* ルビを振る [ruby text="ルビ", subject="ルビを振る対象文字列"] */
+MarkupParser.grammar.appendRuby = lpeg.Tg("[", "]", "ruby") * lpeg.Cp()
+def MarkupParser.Parser->appendRuby(capture, inner, fin){
+	if @.escape { // エスケープされているならappendText
+		@.parent->call('appendText', capture)
+		return fin
+	}
+	local info = assert(loadstring("return :{"..inner.."}"))()
+	// ルビを振るテキストをappend
+	@.parent->call('appendRubySubject', info.subject)
+	// ルビを振る
+	@.parent->call('appendRuby', info.text)
+	return fin
+}
+
+/* 行(列)のスタイルを変更 [style attr1=val1, attr2=val2, ...] */
+// attributes:	align="left/top"/"center"/"right/bottom"
+// 				lineSpacing=行(列)間オフセット
+// 				pitch=字間オフセット, rubyOffset=ルビオフセット
+MarkupParser.grammar.setLineStyle = lpeg.Tg("[", "]", "style") * lpeg.Cp()
+def MarkupParser.Parser->setLineStyle(capture, inner, fin){
+	if @.escape { // エスケープされているならappendText
+		@.parent->call('appendText', capture)
+		return fin
+	}
+	local info = assert(loadstring("return :{"..inner.."}"))()
+	local align = :{ left = 0, top = 0, center = 1, right = 2, bottom = 2 }
+	// 行(列)スタイル変更
+	@.parent->setLineStyle:{
+		align = info.align and align[info.align],
+		lineSpacing = info.lineSpacing, vertical = info.vertical
+	}
+	// ルビ，字間オフセット変更
+	@.parent.writer->setDrawStyle:{
+		rubyOffset = info.rubyOffset, pitch = info.pitch
+	}
+	return fin
+}
+
+/* 改行処理 */
+MarkupParser.grammar.feedLine = lpeg.crlf * lpeg.Cp()
+def MarkupParser.Parser->feedLine(fin){
+	if @.escape { // エスケープされているなら改行無視
+		return fin
+	}
+	@.parent->feedLine()
+	return fin
+}
+
+return MarkupParser

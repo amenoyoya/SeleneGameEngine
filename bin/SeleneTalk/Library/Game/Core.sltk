@@ -1,0 +1,10 @@
+/*** Game/Coreライブラリ最上位ファイル ***/
+// Game/App + Game/Text + Game/Controls //
+
+// 必要最低限の機能のみ欲しい場合は，このファイルをrequireする
+
+require "RichText/__Main"
+require "Controls/Core"
+require "Controls/Scroll"
+require "Controls/Panel"
+require "Controls/EditBox"

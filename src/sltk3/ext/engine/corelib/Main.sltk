@@ -1,0 +1,103 @@
+/*** ライブラリのロード順 ***/
+/** Coreライブラリ
+	1. Table
+	4. String
+	5. LPeg
+	6. Main (this file)
+/** Win32ライブラリ
+	1. Win32
+/** SDLライブラリ
+	1. SDL
+/****************************/
+
+local bit = require "bit"
+
+/* bit not */
+bnot = bit.bnot
+
+
+/*** loadstring, loadfile ***/
+loadstring = Sltk.Engine.loadString
+
+
+/*** package.loaders追加 ***/
+// package.preloadテーブルからスクリプト/プラグイン探索
+// プラグインは'luaopen_module'関数を呼び出す
+table.insert(package.loaders, 3, def(filename){
+	local msg = ""
+	for _, path in ipairs(package.preload) {
+		local filepath = Sltk.Path.appendSlash(path)..filename
+		local ext = Sltk.Path.getExtension(filename)
+		/* 拡張子がdll,soならプラグインとしてload */
+		if (ext->same".dll" or ext->same".so") and Sltk.Path.isFile(filepath) {
+			local loader, msg = package.loadlib(filepath->encode(Sltk.Encoding.SJIS), "luaopen_module")
+			if !loader {
+				error("failed to load module file '"..filepath.."':\n\t"..msg)
+			}
+			return loader
+		}
+		/* スクリプトファイルload */
+		local func = Sltk.Engine.require(filepath)
+		if type(func) == 'function' { return func }
+		/* 拡張子をdll,soとしてプラグインload */
+		local plugin = filepath..".dll"
+		if Sltk.Path.isFile(plugin) {
+			local loader, msg = package.loadlib(plugin->encode(Sltk.Encoding.SJIS), "luaopen_module")
+			if !loader {
+				error("failed to load module file '"..plugin.."':\n\t"..msg)
+			}
+			return loader
+		}
+		plugin = filepath..".so"
+		if Sltk.Path.isFile(plugin) {
+			local loader, msg = package.loadlib(plugin->encode(Sltk.Encoding.SJIS), "luaopen_module")
+			if !loader {
+				error("failed to load module file '"..plugin.."':\n\t"..msg)
+			}
+			return loader
+		}
+		/* エラーメッセージ更新 */
+		msg = msg.."\n\tmodule '"..filename.."' not found in package.preload."
+	}
+	return msg
+})
+
+
+/*** ffi関数 ***/
+ffi = require "ffi"
+
+/* Sltk.Binaryデータ編集関数をクラスに追加 */
+local meta = getmetatable(Sltk.Binary)
+setmetatable(Sltk.Binary, :{})
+Sltk.Binary.getData = def(@, num){
+	return Sltk.getBinaryData(@, num)
+}
+Sltk.Binary.setData = def(@, num, data){
+	if data == nil { return Sltk.setBinaryData(@, #num, num) }
+	return Sltk.setBinaryData(@, num, data)
+}
+setmetatable(Sltk.Binary, meta)
+
+
+/*** Windows用ライブラリ ***/
+if ffi.os == "Windows" {
+	/* UTF-8 <-> wchar_t[] */
+	ffi.cdef[[
+	bool utf8ToWideString(const char *src, wchar_t *dest, unsigned long size);
+	bool wideStringToUTF8(const wchar_t *src, char *dest, unsigned long size);
+	]]
+	
+	Sltk.Encoding.utf8ToWideString = def(src){
+		local size = src->len()
+		local dest = ffi.new("wchar_t["..(size+1).."]")
+		ffi.C.utf8ToWideString(src, dest, size)
+		return dest
+	}
+	
+	Sltk.Encoding.wideStringToUTF8 = def(src){
+		local size = ffi.sizeof(src)
+		local dest = ffi.new("char["..(size+1).."]")
+		ffi.C.wideStringToUTF8(src, dest, size)
+		return ffi.string(dest)
+	}
+}

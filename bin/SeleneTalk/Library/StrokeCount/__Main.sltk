@@ -1,0 +1,39 @@
+local dir = Path.appendSlash(Path.getParent(debug.getinfo(1).source, false))
+
+local def loadDB(name){
+	local t1, t2 = :{}, :{}
+	local f, i = Engine.getFileReader(), 1
+	
+	if f->open(dir..name..".txt") {
+		while getState(f) == Object.ACTIVE {
+			local str = f->readLine()
+			t1[i] = :{}
+			for n = 1, str->u8len() {
+				local c = str->u8sub(n, n)
+				table.insert(t1[i], c)
+				t2[c] = i
+			}
+			i = i + 1
+		}
+	}
+	return t1, t2
+}
+
+local nk1, nk2 = loadDB "常用漢字"
+local mk1, mk2 = loadDB "人名漢字"
+local hk1, hk2 = loadDB "ひらがな"
+local kk1, kk2 = loadDB "カタカナ"
+local al1, al2 = loadDB "アルファベット"
+local all = :{}
+
+table.copy(nk2, all)
+table.copy(mk2, all)
+table.copy(hk2, all)
+table.copy(kk2, all)
+table.copy(al2, all)
+
+return :{
+	dataBase = all,
+	normal = nk1, name = mk1,
+	hira = hk1, kata = kk1, alpha = al1
+}

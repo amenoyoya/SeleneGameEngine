@@ -1,0 +1,80 @@
+// msvcbuild.bat を修正
+・コンパイルするファイル群に _*.c を追加
+・コンパイルフラグに -DLUAJIT_ENABLE_LUA52COMPAT を追加
+	LJCOMPILE=～
+
+/*** コメント "by yoya." が付記されている部分が修正部分 ***/
+
+// stripオプション付きlua_dump (luaX_dump)
+・lua.h: LUA_API int (luaX_dump) (...) ～
+・lj_load.c: LUA_API int luaX_dump(...) ～
+
+// エラーメッセージのチャンク名の最大サイズを変更
+・luaconf.h: #define LUA_IDSIZE 60=>512
+
+// SeleneTalk3文法
+・Lua/SeleneTalk wrapping
+	lj_obj.h, lj_obj.c: スイッチフラグ lj_obj_sltkmode を定義
+	Lua/SeleneTalkモード切り替え(取得)関数 lua_sltkmode を定義
+		lua.h: LUA_API char lua_sltkmode(char flag);
+		lj_api.c: LUA_API char lua_sltkmode(char flag) ～
+	ファイル(.h, .c) lj_lex と lj_parse をSeleneTalkとluaで分けて _lex_** と _parse_** で実装
+		lj_lex lj_parse は _lex_** と _parse_** のラッパーファイルとした
+	Lua/SeleneTalkモードが切り替わった場合を想定して，スクリプトload前に毎回 lj_lex_init(L) するようにした
+		lj_load.c: LUA_API int lua_loadx(...) ～
+		lj_bcwrite.c: int lj_bcwrite(...) ～
+・[~=] -> [!=], [not] -> [!]
+	_lex_sltk.c: #define TK_DEF ～
+	_lex_sltk.c: static int llex(LexState *ls, TValue *tv) ～
+	_parse_sltk.c: #define TK_not '!'
+・[function] -> [def], [elseif] -> [elif]
+	_lex_sltk.c: #define TK_DEF ～
+	_parse_sltk.c: #define TK_function TK_def, #define TK_elseif TK_elif
+・コメントをC言語風に [--] -> [//],  [ --[[...]] ] -> [/*...*/]
+	_lex_sltk.c: static int llex(LexState *ls, TValue *tv) ～ case '/': ～
+・メソッド呼び出し [:] -> [->] 変更
+	_lex_sltk.c: #define TK_DEF ～ (TK_method追加)
+	_lex_sltk.c: static int llex(LexState *ls, TValue *tv) ～ case '-': ～
+	_parse_sltk.c:
+		static void expr_primary(LexState *ls, ExpDesc *v) ～
+		static void parse_func(LexState *ls, BCLine line) ～
+・[:: gotoラベル ::] -> [: gotoラベル :]
+	_lex_sltk.c: TK_label削除
+	_lex_sltk.c: static int llex(LexState *ls, TValue *tv) ～
+	_parse_sltk.c: #define TK_label ':'
+・selfを@で書けるように
+	_lex_sltk.c: static int llex(LexState *ls, TValue *tv) ～
+
+・テーブル定義: [:{...}]
+	_lex_sltk.c: __(tbl, :{) 追加
+	_lex_sltk.c: static int llex(LexState *ls, TValue *tv) ～ case ':': ～
+	_parse_sltk.c:
+		static void expr_table(LexState *ls, ExpDesc *e) ～
+		static void parse_args(LexState *ls, ExpDesc *e) ～
+		static void expr_primary(LexState *ls, ExpDesc *v) ～
+		static void expr_simple(LexState *ls, ExpDesc *v) ～
+・[then ... end] [do ... end] -> [{ ... }], [function ... end] -> [def { ... }]
+	_lex_sltk.c: TK_then, TK_do, TK_end削除
+	_parse_sltk.c: #define TK_then '{', #define TK_do '{', #define TK_end '}'
+		static void parse_if(LexState *ls, BCLine line) ～
+		static int endofblock(LexToken token) ～
+		static void parse_body(LexState *ls, ExpDesc *e, int needself, BCLine line) ～
+
+// 新規演算子の追加
+・ビット演算子，整数割り算演算子追加
+	_lex_**.h: #define TK_DEF ～
+	_lex_**.c: static int llex(LexState *ls, TValue *tv) ～
+	_parse_**.c:
+		priority[] = ～
+		static BinOpr token2binop(LexToken tok) ～
+		static void bcemit_arith(FuncState *fs, BinOpr opr, ExpDesc *e1, ExpDesc *e2) ～
+		static int foldarith(BinOpr opr, ExpDesc *e1, ExpDesc *e2) ～
+	vm_x86.dasc: // x86 with x87 ops のみ対応
+		->vm_foldarith:
+		static void build_ins(BuildCtx *ctx, BCOp op, int defop)
+			case BAND: ～
+・新規演算子用メタメソッド定義
+	lib_ffi.c: LJLIB_CF(ffi_meta___band) ～
+	lj_bc.c: #define BCDEF ～
+	lj_obj.h: #define MMDEF ～
+	lj_carith.c: static int carith_int64(...) ～

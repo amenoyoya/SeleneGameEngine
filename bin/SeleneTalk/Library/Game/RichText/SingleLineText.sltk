@@ -1,0 +1,259 @@
+/*** RichChar配列(一行) ***/
+// vertical: 縦書モード true/false
+// writer: SDL.RichTextWriter
+SDL.SingleLineText = class :{
+	constructor = def(@, vertical, writer){
+		@.vertical = (vertical and true or false)
+		@.writer = writer or SDL.RichTextWriter()
+		@.string = :{} // RichChar配列
+		@.plain = "" // プレーンテキスト
+		@.width, @.height = 0, 0 // 描画に必要なサイズ
+		@.rubyStart = 0 // ルビを振る開始位置
+		@.index = 0 // 現在ポインタが示すindex(最後の文字)
+		@.pos = :{x=0, y=0} // 次のRichCharの描画位置
+		@.rubySize = 0 // ルビを振った場合、その最大サイズ
+	},
+	
+	/* 添字 */
+	operator = :{
+		__index = def(@, key){
+			if type(key) == 'number' { return @.string[key] }
+		},
+		__len = def(@){
+			return #@.string
+		},
+	},
+	
+	/* 汎用データ追加 */
+	// @.index+1 の位置にRichCharをn個追加
+	// callback: function(i)->table i番目のRichCharテーブルを返す関数を指定
+	// 		画像を追加する場合は return :{ texture = SDL.Image(), width = ..., height = ... }
+	// pos: 追加データの表示位置．デフォルトは @.pos
+	append = def(@, n, callback, pos){
+		local width, height = 0, 0
+		
+		pos = pos or @.pos
+		for i = 1, n {
+			local obj = @.writer->generate(callback(i))
+			// 描画位置指定
+			obj.x, obj.y = pos.x, pos.y
+			table.insert(@.string, @.index+1, obj)
+			// ポインタ位置をインクリメント
+			@.index = @.index + 1
+			if @.vertical {
+				// RichCharの高さが0なら字間オフセットは考慮しない
+				pos.y = pos.y + obj.height + (obj.height == 0 and 0 or obj.pitch)
+				height = height + obj.height
+				if width < obj.width { width = obj.width }
+			} else {
+				// RichCharの幅が0なら字間オフセットは考慮しない
+				pos.x = pos.x + obj.width + (obj.width == 0 and 0 or obj.pitch)
+				width = width + obj.width
+				if height < obj.height { height = obj.height }
+			}
+		}
+		/* @.index+1 の位置以降の表示位置を後ろへ調整 */
+		if width == 0 and height == 0 { return width, height } // サイズ0なら更新しない
+		if @.vertical { // 縦書モード
+			@.height = @.pos.y
+			for i = @.index+1, #@.string {
+				@.string[i].y = @.string[i].y + height
+				@.height = @.string[i].y
+			}
+			if @.width < width { @.width = width }
+		}else{ // 横書モード
+			@.width = @.pos.x
+			for i = @.index+1, #@.string {
+				@.string[i].x = @.string[i].x + width
+				@.width = @.string[i].x
+			}
+			if @.height < height { @.height = height }
+		}
+		return width, height
+	},
+	
+	/* 文字列追加 */
+	// param: 追加情報のテーブル
+	appendText = def(@, text, param){
+		// string.u8replace(string, ini, fin, newstring)
+		// -> ini文字目～fin文字目までをnewstringで置換
+		// -> finを(ini-1)にするとnewstringをini位置に挿入できる
+		text = tostring(text)
+		@.plain = @.plain->u8replace(@.index+1, @.index, text)
+		@->append(text->u8len(), def(i){
+			local obj = SDL.Text(@.writer.font, text->u8sub(i, i))
+			local data = :{ texture = obj, width = obj->getWidth(), height = obj->getHeight() }
+			
+			if param { table.copy(param, data) }
+			return data
+		})
+	},
+	
+	/* ルビ (seek, remove等の編集を行う場合は使わないほうが無難) */
+	// ルビを振るテキストを追加
+	appendRubySubject = def(@, text, param){
+		@.rubyStart = @.vertical and @.pos.y or @.pos.x
+		@->appendText(text, param)
+	},
+	// ルビを追加
+	// appendRubySubject()→appendRuby()の順
+	// ※alignPositionsを最後に呼び出さないとルビ位置がずれたままになる
+	appendRuby = def(@, text, param){
+		local rubyIndex = @.index + 1
+		local pos = :{
+			x = (@.vertical and @.pos.x or @.rubyStart),
+			y = (@.vertical and @.rubyStart or @.pos.y),
+		}
+		local width, height = @->append(text->u8len(), def(i){
+			local obj = SDL.Text(@.writer.rubyFont, text->u8sub(i, i))
+			local data = :{
+				texture = obj, width = obj->getWidth(), height = obj->getHeight(),
+				rubyOffset = @.writer.rubyOffset
+			}
+			if param { table.copy(param, data) }
+			return data
+		}, pos)
+		
+		/* ルビ表示位置計算 */
+		local textsize = (@.vertical and @.pos.y or @.pos.x) - @.rubyStart
+		local rubysize = (@.vertical and height or width)
+		local rx, ry = 0, 0
+		// ルビの頭の位置を計算
+		if @.vertical { ry = (textsize - rubysize) / 2 }
+		else { rx = (textsize - rubysize) / 2 }
+		// ルビ表示位置調整
+		for i = rubyIndex, @.index {
+			@.string[i].x, @.string[i].y = @.string[i].x + rx, @.string[i].y + ry
+		}
+		
+		/* ルビの最大サイズ更新 */
+		if @.vertical {
+			if @.rubySize < width + @.writer.rubyOffset { @.rubySize = width + @.writer.rubyOffset }
+		}else{
+			if @.rubySize < height + @.writer.rubyOffset { @.rubySize = height + @.writer.rubyOffset }
+		}
+	},
+	
+	/* 全てのRichCharを削除 */
+	clear = def(@){
+		@.string, @.plain, @.index = :{}, "", 0
+		@.width, @.height, @.rubySize = 0, 0, 0
+		@.pos.x, @.pos.y, @.rubyStart = 0, 0, 0
+		collectgarbage"collect"
+	},
+	
+	/* 描画を行う前にRichChar配列の位置を揃える */
+	// x, y: 基準位置[=0,0]
+	// stand: 文字位置(x,y)を揃える基準点[=2]． 0=上(左)、1=中央、2=下(右)
+	// align: 行(列)をalignBaseSize基準で寄せる[=0]． 0=左(上)、1=中央、2=右(下)
+	// alignBaseSize: 行(列)を寄せる時の基準サイズ
+	alignPositions = def(@, x, y, stand, align, alignBaseSize){
+		x, y = x or 0, y or 0
+		stand, align = stand or 2, align or 0
+		
+		if @.vertical { /* 縦書モード */
+			local mov = 0 // 寄せる量
+			
+			if alignBaseSize and alignBaseSize > @.height {
+				if align == 1 { mov = (alignBaseSize-@.height)/2 } // 中央寄せ
+				elif align == 2 { mov = alignBaseSize-@.height } // 下寄せ
+			}
+			for i = 1, #@.string {
+				local v = @.string[i]
+				
+				v.y = v.y + y + mov
+				v.x = v.x + x
+				if v.rubyOffset { // ルビ
+					v.x = v.x + @.width // ルビは本文の右側
+					if stand == 1 { v.x = v.x + (@.rubySize-v.width)/2 } // 中央揃え
+					elif stand == 2 { v.x = v.x + (@.rubySize-v.width) } // 右揃え
+				}else{ // 本文
+					if stand == 1 { v.x = v.x + (@.width-v.width)/2 } // 中央揃え
+					elif stand == 2 { v.x = v.x + (@.width-v.width) } // 右揃え
+				}
+			}
+		}else{ /* 横書モード */
+			local mov = 0 // 寄せる量
+			
+			if alignBaseSize and alignBaseSize > @.width {
+				if align == 1 { mov = (alignBaseSize-@.width)/2 } // 中央寄せ
+				elif align == 2 { mov = alignBaseSize-@.width } // 右寄せ
+			}
+			for i = 1, #@.string {
+				local v = @.string[i]
+				
+				v.x = v.x + x + mov
+				v.y = v.y + y
+				if v.rubyOffset { // ルビ
+					v.y = v.y - v.rubyOffset
+					if stand == 1 { v.y = v.y + (@.rubySize-v.height)/2 } // 中央揃え
+					elif stand == 2 { v.y = v.y + (@.rubySize-v.height) } // 下揃え
+				}else{ // 本文
+					v.y = v.y + @.rubySize // ルビの分下に下げる
+					if stand == 1 { v.y = v.y + (@.height-v.height)/2 } // 中央揃え
+					elif stand == 2 { v.y = v.y + (@.height-v.height) } // 下揃え
+				}
+			}
+		}
+	},
+	
+	/* 描画 */
+	draw = def(@, x, y, alpha){
+		for i = 1, #@.string { @.string[i]->draw(x, y, alpha) }
+	},
+	
+	/* 編集 */
+	// ポインタ位置を移動
+	// mode: SEEK_SET, SEEK_CUR(既定), SEEK_END
+	seek = def(@, mov, mode){
+		local size = #@.string
+		
+		if mode == SEEK_SET { @.index = mov }
+		elif mode == SEEK_END { @.index = size + mov }
+		else { @.index = @.index + mov }
+		
+		if @.index < 0 { @.index = 0 }
+		elif @.index > size { @.index = size }
+		
+		local obj = @.string[@.index]
+		
+		@.pos.x = obj and (obj.x + (@.vertical and 0 or obj.width)) or 0
+		@.pos.y = obj and (obj.y + (@.vertical and obj.height or 0)) or 0
+	},
+	
+	// 指定インデックスから指定個数分のDecoChar配列を削除
+	// ※maxHeight(縦書ならmaxWidth)を再計算したりはしないので注意
+	remove = def(@, index, num){
+		local size = #@.string
+		
+		num = num or 1
+		if index < 1 { index = 1 }
+		if index + num > size + 1 { num = size + 1 - index }
+		if index <= size {
+			for i = index, size {
+				local prev = @.string[i-1]
+				local x = prev and (prev.x + (@.vertical and 0 or prev.width)) or 0
+				local y = prev and (prev.y + (@.vertical and prev.height or 0)) or 0
+				
+				@.string[i] = table.getclone(@.string[i+num]) // index+numのRichCharを持ってくる
+				if @.string[i] { @.string[i].x, @.string[i].y = x, y }
+			}
+			@.plain = @.plain->u8replace(index, index + num - 1, "") // プレーンテキスト更新
+			// ポインタ位置更新
+			@.index = index - 1 // 削除したindexの前にポインタを置く
+			local obj = @.string[@.index]
+			@.pos.x = obj and (obj.x + (@.vertical and 0 or obj.width)) or 0
+			@.pos.y = obj and (obj.y + (@.vertical and obj.height or 0)) or 0
+			// 行幅を更新
+			obj = @.string[size-num]
+			if @.vertical { @.height = obj and (obj.y + obj.height) or 0 }
+			else { @.width = obj and (obj.x + obj.width) or 0 }
+		}
+	},
+	
+	/* 描画に必要なサイズを修得 */
+	getWidth = def(@){ return @.vertical and @.width+@.rubySize or @.width },
+	getHeight = def(@){ return @.vertical and @.height or @.height+@.rubySize },
+	/* プレーンテキスト取得 */
+	getText = def(@){ return @.plain },
+}

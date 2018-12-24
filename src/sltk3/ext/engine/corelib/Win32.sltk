@@ -1,0 +1,43 @@
+/* Sltk.Win32.Windowクラスにコールバック関数設定メソッド追加 */
+local meta = getmetatable(Sltk.Win32.Window)
+setmetatable(Sltk.Win32.Window, :{})
+Sltk.Win32.Window.setProcedure = def(@, callback){
+	Sltk.Win32.setWindowProcedure(@, def(hwnd, msg, wp, lp){
+		local ok, ret = xpcall(def(){
+			return callback(hwnd, msg, wp, lp)
+		}, def(err){
+			Sltk.Win32.showMessageBox(err, "Sltk.Win32.Window Procedure Error", 0x00000030)
+		})
+		if ok {
+			return ret
+		}else{
+			Sltk.Win32.setWindowProcedure(@, def(){ return true })
+			return false
+		}
+	})
+}
+setmetatable(Sltk.Win32.Window, meta)
+
+/* Sltk.Win32.Browserクラスにコールバック関数設定メソッド追加 */
+meta = getmetatable(Sltk.Win32.Browser)
+setmetatable(Sltk.Win32.Browser, :{})
+for _, v in pairs :{'beforeNavigate', 'documentComplete', 'newWindow'} {
+	Sltk.Win32.Browser['setFunction_'..v] = def(@, callback){
+		Sltk.Win32.setBrowserFunction(@, v, callback)
+	}
+}
+setmetatable(Sltk.Win32.Browser, meta)
+
+
+/* Sltk.Win32.showMessageBox */
+local msgbox = Sltk.Win32.showMessageBox
+def Sltk.Win32.showMessageBox(message, title, mode, hwnd){
+	return msgbox(tostring(message), title != nil and tostring(title) or "メッセージ",
+		mode or 0x00000040, hwnd or 0)
+}
+
+
+/***** エラーハンドラー *****/
+def Sltk.Engine.errorHandler(msg){
+	Sltk.Win32.showMessageBox(msg, "SeleneTalk Script Error", 0x00000030)
+}

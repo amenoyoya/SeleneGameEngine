@@ -1,0 +1,183 @@
+require "../ADV"
+require "../Selector"
+
+/* テキストファイル解析用 */
+local linePATT = lpeg.C((1-lpeg.crlf)^0) * (lpeg.crlf + lpeg.P(-1)) * lpeg.Cp()
+ / def(line, fin){ return line, fin } // 行パターン
+local comPATT = lpeg.space^0 * "//" * lpeg.P(1)^0 // コメント行パターン
+local newPATT = lpeg.space^0 * ";" // 強制新規イベント作成パターン
+local defPATT = lpeg.space^0 * lpeg.C((1-lpeg.space)^1)
+ * (lpeg.space^1 * lpeg.C(lpeg.P(1)^1) + lpeg.C(lpeg.space^0))
+ / def(type, data){ return type, data } // イベント定義パターン
+local labelPATT = lpeg.space^0 * "*" * lpeg.space^0 * lpeg.C((1-lpeg.space)^1)
+ * (lpeg.space^1 * lpeg.C(lpeg.P(1)^1) + lpeg.C(lpeg.space^0))
+ / def(label, data){ return label, data } // ラベル定義パターン
+
+// 溜めている設定テキストの内容を現在編集中のイベントにセット
+local def setinfo(scenario, info){
+	local scene = scenario[info.cur]
+	
+	if info.store != "" {
+		if info.hasbody { scene.body = info.store } // BODY属性があるならbodyに設定（ADVの表示テキストなど）
+		else { table.copy(assert(loadstring("return :{"..info.store.."}"))(), scene) } // それ以外なら設定コピー
+	}
+	scene.type = info.type // イベントタイプはここでセット
+	info.store, info.type, info.hasbody = "" // 設定クリア
+}
+
+// 新規イベント作成
+local def newscene(scenario, info){
+	if info.type { // 現在編集中のイベントがある場合のみ新規イベント作成
+		setinfo(scenario, info) // 現在までの設定をセット
+		info.cur = info.cur + 1
+		scenario[info.cur] = :{}
+	}
+}
+
+// イベント定義開始
+local def beginscene(@, line, scenario, info, typename, data){
+	local enable = typename and (@.events[typename] and 1 or @.events[typename..'_'] and 2)
+	
+	if enable { // 有効なイベントタイプが指定されたらイベント設定
+		info.type = typename // イベント名保存
+		if enable == 2 { // BODY属性を持つイベントの設定は一行だけで完了．以降はBODYの編集に移行
+			info.hasbody = true
+			table.copy(assert(loadstring("return :{"..data.."}"))(), scenario[info.cur])
+		} else { // BODY属性がないなら設定テキストを溜め始める
+			info.store = data.."\n"
+		}
+	}else{ // 単なる文字列ならADVイベントに設定
+		info.type = 'adv'
+		info.hasbody = true
+		info.store = line.."\n"
+	}
+}
+
+// イベント記述行解析
+local def parsescene(@, line, scenario, info){
+	local label, data = labelPATT->match(line)
+	
+	if label { // ラベル定義
+		local scene = scenario[info.cur]
+		table.copy(assert(loadstring("return :{"..data.."}"))(), scene) // 設定コピー
+		scene.label = label // ラベル名定義
+		// 新規イベント作成
+		info.cur = info.cur + 1
+		scenario[info.cur] = :{}
+	}elif comPATT->match(line) { // コメント行無視
+	}else{ // コメント行でも新規イベント作成行でもないなら
+		beginscene(@, line, scenario, info, defPATT->match(line)) // イベント設定
+	}
+}
+
+
+local defaultEvents = require "Events" // デフォルトイベント集
+
+/*** テーブルによるゲーム進行管理者 ***/
+SDL.Conductor = class:{
+	// events: イベント定義テーブル
+	constructor = def(@, events){
+		@.events = events or defaultEvents
+		@.scenario = :{} // 現在実行中のシナリオ
+		@.cur = 1 // 現在実行中のシナリオのインデックス
+		@.adv = SDL.ADV()
+		@.adv.settings = :{}
+		
+		@.selector = SDL.SelectorPanel()
+		@.selector.settings = :{}
+		@.selector.alpha = 0 // 背景ウィンドウ透過度
+		def @.selector->onItemClicked(i){ @.selected = i }
+	},
+	
+	/* ゲーム実行 */
+	// ルーチン内でのみ使用可能
+	// sceneTable: ゲーム進行を記述したテーブル
+	execute = def(@, sceneTable){
+		@.scenario = sceneTable
+		@.cur = 1
+		while @.cur <= #@.scenario {
+			// ADVエンジンが終了しているか停止していれば次のイベント実行
+			if @.adv.state == SDL.ADV_NONE or @.adv.state == SDL.ADV_END or @.adv.state & SDL.ADV_STOP != 0 {
+				local scene = @.scenario[@.cur]
+				local proc = scene.type and (@.events[scene.type] or @.events[scene.type..'_'])
+				
+				if proc { proc(@, scene) }
+				@.cur = @.cur + 1
+			}else{
+				yield()
+			}
+		}
+		// ADVエンジンが終了するまで待つ
+		while @.adv.state != SDL.ADV_NONE { yield() }
+	},
+	
+	/* テキストを解析してゲーム進行テーブル作成 */
+	parse = def(@, text){
+		local scenario = :{:{}}
+		local info = :{
+			type = nil, // 現在編集中のイベントタイプ
+			cur = 1, // 現在編集中のイベントのインデックス
+			store = "", // 今溜めている設定テキスト
+		}
+		local line, cur, size = "", 1, text->len()
+		
+		// 一行ずつ解析
+		while cur <= size {
+			line, cur = linePATT->match(text, cur)
+			local cp = newPATT->match(line)
+			
+			if line == "" { // 空行なら新規イベント作成
+				newscene(scenario, info)
+			}elif cp { // 先頭が";"なら新規イベント作成
+				newscene(scenario, info)
+				parsescene(@, line->sub(cp), scenario, info)
+			}elif info.type { // 現在編集中のイベントがあるなら設定テキスト追加
+				info.store = info.store..line.."\n"
+			}else{ // イベント記述行
+				parsescene(@, line, scenario, info)
+			}
+		}
+		setinfo(scenario, info) // 現在までの設定をセット
+		return scenario
+	},
+	
+	/* 指定ラベルまでジャンプ */
+	// まずは現在位置以降を探し，その後先頭から探す
+	jump = def(@, label){
+		local n = #@.scenario
+		for i = 1, n {
+			local index = (@.cur + i - 1) % n + 1
+			// type属性がなく，labelが指定ラベルであるテーブルを探す
+			if !@.scenario[index].type and @.scenario[index].label == label {
+				@.cur = index
+				return true
+			}
+		}
+		// ラベルが見つからなかった
+		error("[SDL.Conductor.jump] failed to find label '"..label.."'")
+	},
+	
+	/* 仮想関数 */
+	// 選択肢背景出現処理
+	onSelectorStarting = def(@){
+		while @.selector.alpha < 150 {
+			@->onSelectorDrawing()
+			@.selector.alpha = @.selector.alpha + 10
+			yield()
+		}
+	},
+	
+	// 選択肢背景描画処理
+	onSelectorDrawing = def(@){
+		SDL.fillRectangle(@.selector.x - 10, @.selector.y - 10, @.selector.width + 20, @.selector.height + 10, SDL.Color(0,100,200,@.selector.alpha))
+	},
+	
+	// 選択肢背景消去処理
+	onSelectorFinishing = def(@){
+		while @.selector.alpha > 0 {
+			@->onSelectorDrawing()
+			@.selector.alpha = @.selector.alpha - 10
+			yield()
+		}
+	},
+}

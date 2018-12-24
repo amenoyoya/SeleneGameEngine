@@ -1,0 +1,130 @@
+namespace Sltk{
+	namespace Win32{
+		/*** Variantデータ型 ***/
+		enum VariantType{
+			VT_NONE = 0, VT_STRING, VT_INTEGER, VT_NUMBER, VT_ERROR
+		};
+		
+		struct Variant{
+			u8 vType;
+			string strVal;
+			s32 intVal;
+			double numVal;
+			
+			explicit Variant(u8 type=0, const string &str="", s32 ival=0, double nval=0.0);
+		};
+		
+		
+		/*** HTML要素クラス ***/
+		class HTMLElement: public Sltk::Object {
+		public:
+			// 指定属性を取得
+			Variant getAttribute(const char *attr);
+			// 指定属性を削除
+			bool removeAttribute(const char *attr);
+			// 指定属性をセット
+			bool setAttribute(const char *attr, const Variant &val);
+			
+			// <class>を取得
+			string getClass();
+			// <class>をセット
+			bool setClass(const char *name);
+			
+			// <id>を取得
+			string getID();
+			// <id>をセット
+			bool setID(const char *id);
+			
+			// innerHTMLを取得
+			string getInnerHTML();
+			// innerHTMLをセット
+			bool setInnerHTML(const char *html);
+			
+			// innerTextを取得
+			string getInnerText();
+			// innerTextをセット
+			bool setInnerText(const char *text);
+		};
+		
+		
+		/*** HTML要素集合クラス ***/
+		class HTMLElementCollection: public Sltk::Object {
+		public:
+			// 要素数を取得
+			u32 getSize() const;
+			
+			// index番目の要素を取得
+			HTMLElement getElement(u32 index);
+			// 指定<id>の要素を取得
+			HTMLElement getElement(const char *id);
+		};
+		
+		
+		/*** IEコンポーネントクラス ***/
+		class Browser: public Sltk::Object {
+		public:
+			Browser();
+			explicit Browser(u32 parent, s32 x, s32 y, u32 w, u32 h);
+			~Browser();
+			
+			bool open(u32 parent, s32 x, s32 y, u32 w, u32 h);
+			void close();
+			
+			// 現在表示中のURLを取得
+			string getURL();
+			
+			// ホームページへ
+			bool goHome();
+			
+			// 空白ページヘ
+			bool goBlank();
+			
+			// 前のページヘ
+			bool goBack();
+			
+			// 次のページヘ
+			bool goForward();
+			
+			// 指定URLへ
+			bool navigate(const char *url);
+			
+			// 文字列として渡されたHTMLを読み込む
+			bool writeHTML(const char *html);
+			
+			// Javascriptエラーダイアログ表示/非表示
+			bool setSilent(bool flag);
+			
+			// ページ更新
+			bool refresh();
+			
+			// 読み込み中止
+			bool stop();
+			
+			// IEコンポーネント内でTABを有効にするには、親ウィンドウのprocedureでproccessKey関数を処理する
+			void processKey(u32 hwnd, u32 msg, u32 wp, u32 lp);
+			
+			// Javascript実行
+			Variant executeScript(const char *script, s32 nArgs=0, Variant args[nArgs]=nullptr);
+			
+			
+			/* ドキュメント操作関連 */
+			// ドキュメント内のすべての要素を取得
+			HTMLElementCollection getAllElements();
+			
+			// ドキュメント内にある指定<id>の要素をすべて取得
+			HTMLElementCollection getElementsByID(const char *id);
+			
+			// ドキュメント内にある指定タグ名を持つ要素をすべて取得
+			HTMLElementCollection getElementsByTagName(const char *tagName);
+			
+			// <id>から要素取得
+			HTMLElement getElementByID(const char *id);
+			
+			// ドキュメントのBODYを取得
+			HTMLElement getBody();
+			
+			
+			u32 getWindowHandle() const{return (u32)hwnd;}
+		};
+	}
+}

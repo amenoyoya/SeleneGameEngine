@@ -1,0 +1,162 @@
+namespace Sltk{
+	/* zipグローバル情報 */
+	struct ZipGlobalInformation{
+		u32 entries, // エントリー数
+			commentSize; // グローバルコメントのバイト数
+		
+		ZipGlobalInformation(){}
+	};
+	
+	/* zip書庫内ファイル情報 */
+	struct ZipFileInformation{
+		u32 version, // 作成されたバージョン
+			neededVersion, // 解凍に必要なバージョン
+			flag, // ビットフラグ
+			compressionMethod, // 圧縮メソッド
+			dosDate, // ファイル更新日(DOS)
+			crc, // crc32
+			compressedSize, // 圧縮時のサイズ
+			uncompressedSize, // 解凍時のサイズ
+			fileNameSize, // ファイル名のバイト数
+			fileExtraSize, // エキストラフィールドのバイト数
+			fileCommentSize, // コメントのバイト数
+			diskNumStart, // disk num のスタート位置
+			internalFA, // 内部ファイル属性
+			externalFA; // 外部ファイル属性
+		struct _DateTime{ // 日付・時間
+			u32 sec, min, hour, day, month, year;
+		}date;
+		
+		ZipFileInformation(){}
+	};
+	
+	/*** zipファイル作成クラス ***/
+	class ZipArchiver: public Object {
+	public:
+		ZipArchiver();
+		explicit ZipArchiver(const char *filename, const char *type="w");
+		~ZipArchiver();
+		
+		// zipファイル作成
+		// type: 作成タイプ
+		// 		"w": 新規作成、 "w+":（ファイルに）埋め込み、 "a":（zipに）追加
+		// 		"r": 作成(埋め込み)したzipアーカイブを読み込む
+		bool open(const char *filename, const char *type="w");
+		// close時に作成したzipファイルにコメントを付加できる
+		bool close(const char *comment="");
+		
+		/*** アウトプットモード用関数 ***/
+		// zipファイルにデータをファイルとして追加
+		// level: 圧縮レベル0～9
+		bool append(const char *filename, const void *data, u32 datasize,
+			u8 level=6, const char *comment="", const char *password="");
+		// データを文字列として追加
+		bool appendString(const char *filename, const char *data,
+			u8 level=6, const char *comment="", const char *password="");
+		// データをファイルとして追加
+		bool appendFile(const char *destFileName, const char *srcFileName,
+			u8 level=6, const char *comment="", const char *password="");
+		
+		
+		/*** インプットモード用関数 ***/
+		// グローバル情報取得
+		bool getGlobalInformation(ZipGlobalInformation *info) const;
+		// グローバルコメント取得。サイズはZipGlobalInfo.commentSize
+		string getGlobalComment(u32 size) const;
+		const u32 &getSize() const;
+		
+		/* zip書庫内ファイル探索 */
+		bool toFirstFile(); // 書庫内ファイルの最初の位置へ移動
+		bool toNextFile(); // 次へ移動
+		bool locateFile(const char *filename); // 指定ファイル名のファイル位置に移動
+		bool getCurrentFileInformation(ZipFileInformation *info) const; // 現在位置にあるファイル情報を取得
+		bool getCurrentFileInformation(void *filename, u32 fileNameSize, void *comment=nullptr, u32 commentSize=0) const;
+		u32 getCurrentOffset() const; // 現在位置
+		
+		/* zip書庫内ファイル操作 */
+		// 現在位置にあるファイルを開く
+		bool openCurrentFile(const char *password="");
+		bool closeCurrentFile();
+		bool readCurrentFile(void *dest, u32 size);
+		// open-read-closeを一気に行う関数
+		bool openReadCurrentFile(void *dest, u32 size, const char *password="");
+		u32 getCurrentFilePosition() const; // openした書庫内ファイルの現在位置(解凍時)
+	};
+	
+	// zipサイズ取得
+	u32 getZipSize(const char *filename);
+	
+	// 埋め込みzipデータを削除する
+	bool removeZipData(const char *filename);
+	
+	
+	/*** ZIPアーカイブ内ファイル読み込みクラス ***/
+	class ZipFileReader: public Object {
+	public:
+		ZipFileReader();
+		explicit ZipFileReader(const char *arcname, const char *filename, const char *password="");
+		~ZipFileReader();
+		
+		void setPassword(const char *pass);
+		
+		bool open(const char *arcname, const char *filename);
+		void close();
+		
+		u32 getSize();
+		string readLine();
+		s8 readChar();
+		u32 read(void *dest, u32 size, u32 n=1);
+		string load(u32 size);
+		bool seek(s32 move, u8 from=SEEK_SET);
+		u32 getPosition();
+		
+		Binary &getBinary();
+	};
+	
+	
+	/* ZipFile操作関数 */
+	u32 readFileInZip(const char *arcname, const char *filename, Binary *dest, const char *password="");
+	string loadFileInZip(const char *arcname, const char *filename, const char *password="");
+	bool isFileInZip(const char *arcname, const char *filename, const char *password="");
+	
+	
+	/*** File, ZipFileReaderラッパークラス ***/
+	class FileReader: public Object {
+	public:
+		FileReader();
+		explicit FileReader(const char *filename, const char *ext="", const char *password="");
+		~FileReader();
+		
+		// openするデフォルトのアーカイブを設定
+		void setDefaultArchive(const char *path, const char *key);
+		void setDefaultArchive(const FileReader *file);
+		
+		// File::open, ZipFileReader::open のラッパー
+		// "Archive/File"形式のパスをZipFileReaderで開く
+		// デフォルトアーカイブが設定されている場合は，まず"DefaultArchive/File"に対するopenを試行(ext, password は無視される)
+		// setFileSystemDirectoryで指定したディレクトリ（アーカイブ）も探索する
+		// ext: "～ext/"をArchiveと判断してopenを試行
+		// 		指定しない場合，"/"が見つかる度にZipFileReader::openを試行
+		// password: Archiveパスワード
+		bool open(const char *filename, const char *ext="", const char *password="");
+		
+		// File::open
+		bool openFile(const char *filename);
+		
+		// ZipFileReader::open
+		bool openFileInZip(const char *arcname, const char *filename, const char *password="");
+		
+		void close();
+		
+		// 現在開いているファイルのパス("ディレクトリorアーカイブ/ファイル名")を取得
+		string getCurrentFilePath() const{return curPath;}
+		
+		u32 getSize();
+		string readLine();
+		s8 readChar();
+		u32 read(void *dest, u32 size, u32 n=1);
+		string load(u32 size);
+		bool seek(s32 move, u8 from=SEEK_SET);
+		u32 getPosition();
+	};
+}

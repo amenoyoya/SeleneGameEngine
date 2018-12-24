@@ -1,0 +1,123 @@
+/*** 各種イベント定義 ***/
+local events = :{}
+
+/* ADV実行 */
+events.adv_ = def(@, info){
+	if info.parser { @.adv.settings.parser = info.parser }
+	if info.x { @.adv.x = info.x }
+	if info.y { @.adv.y = info.y }
+	if info.stand { @.adv.settings.stand = info.stand }
+	if info.size { @.adv.settings.size = info.size } // alignBaseSize
+	if info.windowX { @.adv.window.x = info.windowX } // 背景ウィンドウ位置
+	if info.windowY { @.adv.window.y = info.windowY } // 背景ウィンドウ位置
+	if info.windowWidth { @.adv.window.width = info.windowWidth } // 背景ウィンドウサイズ
+	if info.windowHeight { @.adv.window.height = info.windowHeight } // 背景ウィンドウサイズ
+	if info.id { @.adv.id = info.id } // ADV実行ルーチンID
+	
+	if info.clear { // クリアフラグがあればADVクリア
+		SDL.App.routine[@.adv.id or 1000] = nil
+		@.adv->clear()
+	}elif info.body { // ADV実行
+		@.adv.state = SDL.ADV_SHOW // 次のイベントを実行しないようにADV_SHOW状態に
+		SDL.App.routine[@.adv.id or 1000] = def(){ // 指定ルーチンID（デフォルトは1000番）でADV実行
+			@.adv->execute(info.body, @.adv.settings.stand, @.adv.settings.size)
+		}
+	}
+}
+
+/* 選択肢表示 */
+events.select = def(@, info){
+	if info.x { @.selector.settings.x = info.x }
+	if info.y { @.selector.settings.y = info.y }
+	if info.width { @.selector.settings.width = info.width }
+	if info.height { @.selector.settings.height = info.height }
+	if info.xNum { @.selector.settings.xNum = info.xNum }
+	if info.xPixelsPerScroll { @.selector.settings.xPixelsPerScroll = info.xPixelsPerScroll }
+	if info.yPixelsPerScroll { @.selector.settings.yPixelsPerScroll = info.yPixelsPerScroll }
+	if info.itemWidth { @.selector.settings.itemWidth = info.itemWidth }
+	if info.itemHeight { @.selector.settings.itemHeight = info.itemHeight }
+	// 選択パネル作成
+	@.selector.width, @.selector.height = @.selector.settings.width, @.selector.settings.height
+	@.selector->open(info, @.selector.settings.xNum or 1,
+		@.selector.settings.xPixelsPerScroll, @.selector.settings.yPixelsPerScroll,
+		@.selector.settings.itemWidth, @.selector.settings.itemHeight)
+	@.selector.x = @.selector.settings.x == "center" and // "center"なら中央表示
+		SDL.App.window->getWidth() / 2 - @.selector.width / 2 or @.selector.settings.x or 0
+	@.selector.y = @.selector.settings.y == "center" and // "center"なら中央表示
+		SDL.App.window->getHeight() / 2 - @.selector.height / 2 or @.selector.settings.y or 0
+	@.selector.selected = nil
+	// 選択パネル実行
+	@->onSelectorStarting() // 選択肢背景出現処理
+	while !@.selector.selected {
+		@->onSelectorDrawing() // 選択肢背景描画処理
+		@.selector->draw()
+		yield()
+	}
+	@->onSelectorFinishing() // 選択肢背景消去処理
+}
+
+/* ラベルジャンプ */
+// label指定時：cond="条件"があるなら条件一致でラベルジャンプ
+// 				condが指定されていないなら無条件ジャンプ
+// label未指定時：直前の選択肢で選ばれたインデックスのラベルに飛ぶ
+// 				exp=trueならインデックスに対応したスクリプトを実行
+events.jump = def(@, info){
+	if info.label { // ラベルが指定されている場合
+		if info.cond { // 条件が設定されている場合，条件一致でジャンプ
+			if assert(loadstring("return "..info.cond))() { @->jump(info.label) }
+		}else{ // 無条件ジャンプ
+			@->jump(info.label)
+		}
+	} else { // ラベルが指定されていない場合，選択肢ジャンプ
+		local label = info[@.selector.selected]
+		if label {
+			if info.exp { assert(loadstring(label))() }
+			else { @->jump(label) }
+		}
+	}
+}
+
+/* シナリオジャンプ */
+// 別のゲーム進行テーブルに移行
+// scene指定時：cond="条件"があるなら条件一致でシナリオジャンプ
+// 				condが指定されていないなら無条件ジャンプ
+// scene未指定時：直前の選択肢で選ばれたインデックスのシナリオに飛ぶ
+events.move = def(@, info){
+	if info.scene {
+		if info.cond { // 条件が設定されている場合，条件一致でジャンプ
+			if assert(loadstring("return "..info.cond))() {
+				@.scenario = type(info.scene) == 'string' and @->parse(SDL.loadFile(info.scene)) or info.scene
+				@.cur = 0
+			}
+		}else{ // 無条件ジャンプ
+			@.scenario = type(info.scene) == 'string' and @->parse(SDL.loadFile(info.scene)) or info.scene
+			@.cur = 0
+		}
+	} else {
+		local scene = info[@.selector.selected]
+		if scene {
+			@.scenario = type(scene) == 'string' and @->parse(SDL.loadFile(scene)) or scene
+			@.cur = 0
+		}
+	}
+}
+
+/* ルーチン設定 */
+// ルーチンIDを指定しない場合，スクリプト実行（eval）
+events.routine_ = def(@, info){
+	if info.id {
+		if info.clear { SDL.App.routine[info.id] = nil } // ルーチン削除
+		else { // ルーチン定義
+			if info.exp {
+				SDL.App.routine[info.id] = assert(loadstring("return def(){"..info.exp.."}"))()
+			}elif info.body {
+				SDL.App.routine[info.id] = assert(loadstring("return def(){"..info.body.."}"))()
+			}
+		}
+	}else{ // ID未指定ならスクリプト実行
+		if info.exp { assert(loadstring(info.exp))() }
+		elif info.body { assert(loadstring(info.body))() }
+	}
+}
+
+return events

@@ -1,0 +1,211 @@
+/* ===== テーブル関連ライブラリ ===== */
+
+// 逆順ipairs
+def rpairs(t){
+	local it = def(t,i){
+		i = i - 1
+		local v = t[i]
+		if v == nil { return v }
+		return i, v
+	}
+	return it, t, #t + 1
+}
+
+// テーブルにテーブルをコピーする
+// copytable[=false]: trueならテーブルを再帰的にコピー
+// overwrite[=nil]: (destKey)->(destAnotherKey, srcAnotherKey)
+// 		destに既にsrcのキーが存在する場合、
+// 			・コピー先のキーdestAnotherKeyを指定
+// 			・destAnotherKeyを指定しない場合、コピーをスキップ
+// 			・コピー先の値を別名キーsrcAnotherKeyに退避する
+def table.copy(src, dest, copytable, overwrite){
+	local write = (type(overwrite) == 'function')
+	
+	if type(src) == 'table' and type(dest) == 'table' {
+		for k, v in pairs(src) {
+			if dest[k] != nil and write { // コピー先に値が存在する場合の処理
+				local key, esckey = overwrite(k)
+				// コピー先の値を退避
+				if esckey { dest[esckey] = dest[k] }
+				// コピー先に値をコピー
+				if key {
+					if type(v) == 'table' and copytable {
+						local meta = getmetatable(v)
+						
+						dest[key] = :{}
+						table.copy(v, dest[key], copytable, overwrite)
+						if meta { setmetatable(dest[key], meta) }
+					}else{
+						dest[key] = v
+					}
+				}
+			}else{ // 単純コピー
+				if type(v) == 'table' and copytable {
+					dest[k] = :{}
+					table.copy(v, dest[k], copytable, overwrite)
+				}else{
+					dest[k] = v
+				}
+			}
+		}
+	}
+}
+
+// 値、テーブルのクローンを作る
+def table->getclone(){
+	if type(@) == 'table' {
+		local new = :{}
+		table.copy(@, new, true)
+		return new
+	}else{
+		return @
+	}
+}
+
+
+/*** テーブルシリアライズ ***/
+local def value2str(v, all, stringHead, stringTail){
+	local vt = type(v)
+	
+	if vt == 'nil' { return "nil" }
+	elif vt == 'number' { return tostring(v) }
+	elif vt == 'string' { return stringHead..v..stringTail }
+	elif vt == 'boolean' { return tostring(v) }
+	elif all { return tostring(v) }
+}
+
+local def field2str(v){
+	if type(v) == 'number' { return "["..v.."]" }
+	return "['"..v.."']"
+}
+
+// all: trueなら関数やユーザーデータを全て出力
+// stringHead, stringTail: 文字列のクオテーションを指定( デフォルト [=[ ]=] )
+// tableHead, tableTail: テーブルの記号を指定( デフォルト :{ } )
+def table->serialize(all, stringHead, stringTail, tableHead, tableTail){
+	stringHead, stringTail = stringHead or "[=[", stringTail or "]=]"
+	tableHead, tableTail = tableHead or ":{", tableTail or "}"
+	if type(@) != 'table' { return value2str(@, all, stringHead, stringTail) } // テーブルじゃない場合
+	
+	local buf = ""
+	local f, v = next(@, nil)
+	
+	while f {
+		if type(v) == 'table' {
+			if buf != "" { buf = buf.."," }
+			buf = buf..field2str(f).."="..table.serialize(v, all, stringHead, stringTail, tableHead, tableTail)
+		} else {
+			local value = value2str(v, all, stringHead, stringTail)
+			if value {
+				if buf != "" { buf = buf.."," }
+				buf = buf..field2str(f).."="..value
+			}
+		}
+		// 次の要素
+		f, v = next(@, f)
+	}
+	return tableHead..buf..tableTail
+}
+
+
+/*** クラス定義関数 ***/
+/*
+// 新規クラス'App'作成
+App = class :{
+	constructor = def(@, id){ // コンストラクタ
+		@.id = 0, @.map = :{}, // classメンバはコンストラクタで宣言する
+		
+		@->setID(id)
+	},
+	destructor = def(@){ // デストラクタ
+		@.map = :{}
+		print "See you..."
+	},
+	operator = :{ // 演算子定義
+		__newindex = def(@, index, val){ @.map[index] = val },
+		__index = def(@, index){ return @.map[index]  },
+	},
+	getID = def(@){ return @.id },
+	setID = def(@, id){ @.id = id or 0 },
+}
+local app = App(100)
+app[1] = "Hello"
+print(app->getID()) // --> 100
+print(app[1]) // --> "Hello"
+app = nil
+collectgarbage "collect" // --> "See you..."
+
+// クラス'App'を継承して'MyApp'クラス作成
+MyApp = class(App) :{
+	constructor = def(@){
+		// コンストラクタで親クラスのコンストラクタを呼ぶ
+		App.constructor(@)
+	},
+	
+	setID = def(@, id){
+		// オーバーライドした親クラスのメソッドは直接指定で呼び出す
+		App.setID(@, (id or 0) * 5)
+	}
+}
+local myapp = MyApp(100)
+print(myapp->getID()) // --> 500
+*/
+local def createclass(define){
+	local meta = :{
+		__call = def(@, ...){ // インスタンス化関数
+			local obj = table.getclone(@) // インスタンス作成
+			// operatorテーブルをメタテーブルにセット
+			if type(obj.operator) == 'table' {
+				setmetatable(obj, obj.operator)
+				obj.operator = nil
+			}
+			// デストラクタ追加
+			if type(obj.destructor) == 'function' {
+				obj.__udata__ = newproxy(true)
+				getmetatable(obj.__udata__).__gc = def(){
+					obj->destructor()
+				}
+			}
+			// コンストラクタ実行
+			if type(obj.constructor) == 'function' {
+				obj->constructor(...)
+			}
+			return obj
+		}
+	}
+	setmetatable(define, meta)
+	return define
+}
+
+def class(define){
+	local extend = (type(define.__extend) == 'function') // 継承するか
+	// 継承用関数定義
+	define.__extend = def(child){
+		table.copy(define, child, false, def(name){}) // 子クラスに同名のメンバがある場合は，親メンバのコピーは行わない
+		return createclass(child)
+	}
+	// クラス定義
+	if extend { return define.__extend } // 継承クラス定義
+	else{ return createclass(define) }   // 基底クラス定義
+}
+
+/*
+各演算子
++:__add, -:__sub, *:__mul, /:__div, %:__mod, ^:__pow,
+&:__band, |:__bor, ~:__bxor, $:__idiv
+..(結合演算子):__concat, -(変数前のマイナス記号として):__unm,
+[]: __index, []=: __newindex
+#(変数前の要素数取得記号として):__len, ==:__eq, <:__lt, <=:__le
+*/
+
+
+/*** 名前空間をグローバル化 ***/
+// overwrite[=nil]: (destKey)->(destAnotherKey, srcAnotherKey)
+// 		destに既にsrcのキーが存在する場合、
+// 			・コピー先のキーdestAnotherKeyを指定
+// 			・destAnotherKeyを指定しない場合、コピーをスキップ
+// 			・コピー先の値を別名キーsrcAnotherKeyに退避する
+// 		するための関数
+def using(namespace, overwrite){
+	table.copy(namespace, _G, false, overwrite)
+}

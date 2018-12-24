@@ -1,0 +1,172 @@
+/* ウディタのお手軽ウィンドウみたいなもの */
+// 角の大きさが辺の1/6になっている、下のような画像を綺麗に拡大(縮小)して表示する
+/*   ■■■■■■
+     ■　　　　■
+     ■　　　　■
+     ■　　　　■
+     ■　　　　■
+     ■■■■■■ */
+// img| SDL.Textureオブジェクト,  ext| 枠の倍率(=1)
+def SDL.drawEasyWindow(img, x, y, w, h, ext){
+	local iw, ih = img->getWidth(), img->getHeight()
+	
+	ext = ext or 1
+	// 中身
+	img->draw(x+iw/6*ext, y+iw/6*ext, w-iw/3*ext+1, h-ih/3*ext+1, iw/6+1, ih/6+1, iw*2/3-2, ih*2/3-2)
+	// 左枠
+	img->draw(x, y+ih/6*ext, iw/6*ext, h-ih/3*ext, 0, ih/6, iw/6, ih*2/3)
+	// 上枠
+	img->draw(x+iw/6*ext, y, w-iw/3*ext, ih/6*ext, iw/6, 0, iw*2/3, ih/6)
+	// 右枠
+	img->draw(x+w-iw/6*ext, y+ih/6*ext, iw/6*ext, h-ih/3*ext, iw*5/6, ih/6, iw/6, ih*2/3)
+	// 下枠
+	img->draw(x+iw/6*ext, y+h-ih/6*ext, w-iw/3*ext, ih/6*ext, iw/6, ih*5/6, iw*2/3, ih/6)
+	// 左上角
+	img->draw(x, y, iw/6*ext, ih/6*ext, 0, 0, iw/6, ih/6)
+	// 左下角
+	img->draw(x, y+h-ih/6*ext, iw/6*ext, ih/6*ext, 0, ih*5/6, iw/6, ih/6)
+	// 右上角
+	img->draw(x+w-iw/6*ext, y, iw/6*ext, ih/6*ext, iw*5/6, 0, iw/6, ih/6)
+	// 右下角
+	img->draw(x+w-iw/6*ext, y+h-ih/6*ext, iw/6*ext, ih/6*ext, iw*5/6, ih*5/6, iw/6, ih/6)
+}
+
+
+/*** クリック可能オブジェクト ***/
+SDL.Clickable = class :{
+	// texture: 描画するSDL.Texture継承クラス
+	// x, y, w, h: 描画位置・サイズ
+	constructor = def(@, texture, x, y, w, h){
+		@.pressed = 0 // ボタン押下状態
+		@.active = false // ボタンがアクティブか
+		@.texture = texture
+		@.x, @.y = x or 0, y or 0 // 描画時，位置を指定しない場合はこの位置に描画される
+		@.width = w or (@.texture and @.texture->getWidth() or 0) // 描画時，サイズを指定しない場合はこのサイズで描画される
+		@.height = h or (@.texture and @.texture->getHeight() or 0)
+	},
+	
+	/* 描画実行 */
+	// x, y を省略した場合は，@.x, @.y の位置に描画される
+	// width, height を省略した場合は，@.width, @.height のサイズで描画される
+	draw = def(@, x, y, width, height){
+		x, y = x or @.x, y or @.y
+		width, height = width or @.width, height or @.height
+		
+		if SDL.isMouseIn(x, y, width, height) {
+			if !@.active {
+				@.active = true
+				@->onEntered(x, y, width, height) // ボタンにフォーカス！
+			}
+			
+			if SDL.getMouse(SDL.MOUSE_LEFT) == 1 {
+				@.pressed = 1
+				@->onPressed(x, y, width, height) // ボタンが押下！
+			}elif SDL.getKey"OK" == 1 {
+				@.pressed = 2
+				@->onPressed(x, y, width, height) // ボタンが押下！
+			}
+			
+			if @.pressed > 0 {
+				// 押下状態描画
+				@->onDrawing(x, y, width, height, 2)
+				
+				if @.pressed == 1 and SDL.getMouse(SDL.MOUSE_LEFT) == 0 {
+					@.pressed = 0
+					@->onClicked(x, y, width, height) // ボタンが押された！
+				}elif @.pressed == 2 and SDL.getKey"OK" == 0 {
+					@.pressed = 0
+					@->onClicked(x, y, width, height) // ボタンが押された！
+				}
+			}else{
+				@->onDrawing(x, y, width, height, 1) // アクティブ描画
+			}
+		}else{
+			if @.active {
+				@.active = false
+				@->onLeft(x, y, width, height) // フォーカスが外れた！
+			}
+			@.pressed = 0
+			@->onDrawing(x, y, width, height, 0) // 通常描画
+		}
+	},
+	
+	/* 仮想関数 */
+	// ボタンクリック時実行関数
+	onClicked = def(@, x, y, width, height){},
+	// ボタン押下時実行関数
+	onPressed = def(@, x, y, width, height){},
+	// カーソルがボタンにフォーカスした時実行する関数
+	onEntered = def(@, x, y, width, height){},
+	// カーソルがボタンから外れた時実行する関数
+	onLeft = def(@, x, y, width, height){},
+	
+	// 描画関数(status: 0=通常時，1=フォーカス時，2=クリック時)
+	onDrawing = def(@, x, y, width, height, status){
+		if @.texture { // デフォルトではフォーカス/クリック時にテクスチャを青緑色に光らせる
+			@.texture->setColor(SDL.Color(255,255,255))
+			@.texture->draw(x, y, width, height)
+			if status > 0 {
+				@.texture->setBlendMode(SDL.BLEND_ADD)
+				@.texture->setColor(SDL.Color(30*status, 60*status, 120*status, 240))
+				@.texture->draw(x-1, y-1, width, height)
+				@.texture->draw(x+1, y+1, width, height)
+				@.texture->setBlendMode()
+			}
+		}
+	},
+	
+	/* ボタンが押されているか */
+	// 0: 押されていない，1: 押された，2: 押されている，3: 押されている(keepRepeatTime時間以上)
+	isPressing = def(@){
+		return (@.pressed == 1 and SDL.getMouse(SDL.MOUSE_LEFT)) or (@.pressed == 2 and SDL.getKey"OK") or 0
+	},
+}
+
+
+/*** ドラッガブルオブジェクトクラス ***/
+SDL.Draggable = class(SDL.Clickable) :{
+	constructor = def(@, texture, x, y, w, h){
+		SDL.Clickable.constructor(@, texture, x, y, w, h)
+		@.dragging = false // ドラッグ状態
+		@.out = false // カーソルがobjの外側にあるか
+		@.pressedPos = :{x=0, y=0} // クリックした時のカーソル位置(objの左上からの座標)
+		@.mov = :{x=0, y=0} // クリックした時の位置からどれだけカーソルが動いたか
+	},
+	
+	/* 押下時、ドラッグ状態をtrueにする */
+	// この仮想関数は変えてはいけない
+	onPressed = def(@, x, y, width, height){
+		@.dragging = true
+		@.pressedPos.x = SDL.getMouse"X" - x
+		@.pressedPos.y = SDL.getMouse"Y" - y
+	},
+	
+	/* 描画 */
+	// x, y: 省略すればドラッグにより自動的に動かすことができる
+	// width, height を省略した場合は，@.width, @.height のサイズで描画される
+	draw = def(@, x, y, width, height){
+		x, y = x or @.x, y or @.y
+		width, height = width or @.width, height or @.height
+		
+		if @.dragging {
+			if SDL.getMouse(SDL.MOUSE_LEFT) == 0 {
+				@->onDropped(x, y, width, height) // ドロップされた！
+				@.dragging, @.out = false, false
+				@.pressedPos, @.mov = :{x=0, y=0}, :{x=0, y=0}
+			}else{
+				@.mov.x = SDL.getMouse"X" - x - @.pressedPos.x
+				@.mov.y = SDL.getMouse"Y" - y - @.pressedPos.y
+				if SDL.isMouseIn(x, y, width, height) { @.out = false }
+				else { @.out = true }
+			}
+			@->onDrawing(x, y, width, height, 2) // ドラッグ中のstatusは"2"
+			@.x, @.y = @.x + @.mov.x, @.y + @.mov.y // 移動
+		}else{
+			SDL.Clickable.draw(@, x, y, width, height)
+		}
+	},
+	
+	/* 仮想関数 */
+	// ドロップ時実行関数
+	onDropped = def(@, x, y, width, height){},
+}

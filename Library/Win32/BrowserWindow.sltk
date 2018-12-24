@@ -1,0 +1,222 @@
+require "WinTypes"
+
+/* moveWindow */
+local user = ffi.load"user32.dll"
+ffi.cdef[[
+int MoveWindow(int hwnd, int x, int y, int w, int h, int repaint);
+]]
+def Sltk.Win32.moveWindow(hwnd, x, y, w, h, repaint){
+	return 0 != user.MoveWindow(hwnd, x, y, w, h, repaint == nil and true or repaint)
+}
+
+/* template html */
+local template = [[
+<!DOCTYPE html>
+<head>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta charset="UTF-8">
+<script type="text/javascript"><!--%s--></script>
+<style type="text/css"><!--%s--></style>
+%s
+</head>
+<body>
+%s
+</body>
+</html>
+]]
+
+def Sltk.Win32.createTemplateHTML(useJqueryUI, head, body){
+	local reader = Sltk.Engine.getFileReader()
+	local js, css = "", ""
+	
+	if useJqueryUI {
+		if reader->open(Sltk.Path.getParent(debug.getinfo(1).source, false).."/js/jquery-1.12.0.min.js") {
+			js = js..reader->load(reader->getSize())
+			reader->close()
+		}
+		if reader->open(Sltk.Path.getParent(debug.getinfo(1).source, false).."/js/jquery-ui.min.js") {
+			js = js..reader->load(reader->getSize())
+			reader->close()
+		}
+		if reader->open(Sltk.Path.getParent(debug.getinfo(1).source, false).."/css/jquery-ui.min.css") {
+			css = css..reader->load(reader->getSize())
+			reader->close()
+		}
+		if reader->open(Sltk.Path.getParent(debug.getinfo(1).source, false).."/css/jquery-ui.structure.min.js") {
+			css = css..reader->load(reader->getSize())
+			reader->close()
+		}
+		if reader->open(Sltk.Path.getParent(debug.getinfo(1).source, false).."/css/jquery-ui.theme.min.js") {
+			css = css..reader->load(reader->getSize())
+			reader->close()
+		}
+	}
+	return template->format(js, css, head, body)
+}
+
+/* Sltk.Win32.Browser拡張クラス */
+Sltk.Win32.BrowserEx = class:{
+	constructor = def(@, parent, x, y, w, h){
+		@.handle = Sltk.Win32.Browser()
+		
+		/* 各種イベントの制御を仮想関数で行う */
+		@.handle->setFunction_beforeNavigate(def(url){
+			return @->onBeforeNavigate(url)
+		})
+		@.handle->setFunction_documentComplete(def(url){
+			@->onDocumentComplete(url)
+		})
+		@.handle->setFunction_newWindow(def(url){
+			return @->onNewWindow(url)
+		})
+		
+		if parent and x and y and w and h { @->open(parent, x, y, w, h) }
+	},
+	
+	open = def(@, parent, x, y, w, h){
+		if !@.handle->open(parent, x, y, w, h) {
+			error(Sltk.getMessage(@.handle))
+		}
+	},
+	close = def(@){
+		@.handle->close()
+	},
+	getURL = def(@){
+		return @.handle->getURL()
+	},
+	goHome = def(@){
+		return @.handle->goHome()
+	},
+	goBlank = def(@){
+		return @.handle->goBlank()
+	},
+	goBack = def(@){
+		return @.handle->goBack()
+	},
+	goForward = def(@){
+		return @.handle->goForward()
+	},
+	navigate = def(@, url){
+		return @.handle->navigate(url)
+	},
+	writeHTML = def(@, html){
+		return @.handle->writeHTML(html)
+	},
+	writeTemplateHTML = def(@, useJqueryUI, head, body){
+		return @->writeHTML(Sltk.Win32.createTemplateHTML(useJqueryUI, head, body))
+	},
+	setSilent = def(@, flag){
+		return @.handle->setSilent(flag)
+	},
+	refresh = def(@){
+		return @.handle->refresh()
+	},
+	stop = def(@){
+		return @.handle->stop()
+	},
+	processKey = def(@, hwnd, msg, wp, lp){
+		return @.handle->processKey(hwnd, msg, wp, lp)
+	},
+	
+	executeScript = def(@, ...){
+		local n, args = 0, :{}
+		
+		for _, arg in pairs :{...} {
+			if type(arg) == 'string' {
+				n = n + 1
+				args[n] = Sltk.Win32.Variant(Sltk.Win32.VT_STRING, arg)
+			}elif type(arg) == 'number' {
+				n = n + 1
+				args[n] = Sltk.Win32.Variant(Sltk.Win32.VT_NUMBER, "", 0, arg)
+			}
+		}
+		return @.handle->executeScript(script, n, args)
+	},
+	
+	getAllElements = def(@){
+		return @.handle->getAllElements()
+	},
+	getElementsByID = def(@, id){
+		return @.handle->getElementsByID(id)
+	},
+	getElementsByTagName = def(@, tagName){
+		return @.handle->getElementsByTagName(tagName)
+	},
+	getElementByID = def(@, id){
+		return @.handle->getElementByID(id)
+	},
+	getBody = def(@){
+		return @.handle->getBody()
+	},
+	getWindowHandle = def(@){
+		return @.handle->getWindowHandle()
+	},
+	
+	/* 仮想関数 */
+	onBeforeNavigate = def(@, url){ return true },
+	onDocumentComplete = def(@, url){},
+	onNewWindow = def(@, url){ return true },
+}
+
+/* Browser + Window ラッパークラス */
+Sltk.Win32.BrowserWindow = class(Sltk.Win32.BrowserEx):{
+	constructor = def(@, parent, title, x, y, w, h, style, exstyle){
+		Sltk.Win32.BrowserEx.constructor(@)
+		@.window = Sltk.Win32.Window()
+		
+		if parent and title {
+			@->open(parent, title, x or 0x80000000, y or 0x80000000, w or 640, h or 480,
+				style or Sltk.Win32.WS_OVERLAPPEDWINDOW, exstyle or 0)
+		}
+		@->setProcedure(def(hwnd, msg, wp, lp){
+			return @->defaultProcedure(hwnd, msg, wp, lp)
+		})
+	},
+	
+	open = def(@, parent, title, x, y, w, h, style, exstyle){
+		if !@.window->open(parent or 0, title or "BrowserWindow", x or 0x80000000, y or 0x80000000, w or 640, h or 480,
+			style or Sltk.Win32.WS_OVERLAPPEDWINDOW, exstyle or 0)
+		{
+			error(Sltk.getMessage(@.window))
+		}
+		Sltk.Win32.BrowserEx.open(@, @.window->getHandle(), 0, 0, w or 640, h or 480)
+	},
+	
+	close = def(@){
+		Sltk.Win32.BrowserEx.open(@)
+		@.window->close()
+	},
+	
+	show = def(@, flag){
+		return @.window->show(flag or 1)
+	},
+	
+	setProcedure = def(@, procedure){
+		@.window->setProcedure(procedure)
+	},
+	
+	// デフォルトのプロシージャ
+	defaultProcedure = def(@, hwnd, msg, wp, lp){
+		@->processKey(hwnd, msg, wp, lp)
+		if msg == Sltk.Win32.WM_SIZE {
+			Sltk.Win32.moveWindow(@->getBrowserWindowHandle(),
+				0, 0, lp & 0xffff /* LOWORD(lp) */, lp >> 16 /* HIWORD(lp) */, true)
+		}
+		return true
+	},
+	
+	getWindowHandle = def(@){
+		return @.window->getHandle()
+	},
+	getBrowserWindowHandle = def(@){
+		return Sltk.Win32.BrowserEx.getWindowHandle(@)
+	},
+}
+
+
+/*** メインループ ***/
+def Win32.processMainLoop(){
+	while Win32.pollWindowMessage() {
+		System.sleep(1)
+	}
+}

@@ -1,0 +1,82 @@
+/*** 2Dマップ実行クラス ***/
+SDL.Map.Player = :{}
+
+/* マップ準備 */
+// data: 文字列ならファイルからロード．テーブルなら直接データを読み出す
+def SDL.Map.Player->load(data){
+	SDL.Map.load(@, data or SDL.Map.Editor)
+	
+	@.x, @.y = 0, 0
+	@.char.dir = 0 // 主人公向き：上=2, 下=0, 左=3, 右=1
+	@.scale = 1
+	@.routine = Routine() // マップルーチン
+	@.state = 2 // 状態：0=実行不可，1=描画のみ可能，2=実行可能
+	
+	// 常に実行されるイベントルーチンを登録
+	for i, event in pairs(@.events) {
+		if event.action {
+			@.routine[i] = def(){ event->action(@) }
+		}
+	}
+}
+
+/* マップ実行 */
+// マップを実行するウィンドウの大きさを渡す
+def SDL.Map.Player->draw(screenWidth, screenHeight){
+	if @.state == 0 { return } // 実行不可ならここで終わり
+	
+	local charMoved = false // 主人公が動いたかどうか
+	screenWidth, screenHeight = screenWidth or SDL.App.settings.width, screenHeight or SDL.App.settings.height
+	
+	if @.state == 2 {
+		// イベントルーチン実行
+		@.routine->execute()
+		// 主人公操作
+		if SDL.getKey"LEFT" % 2 == 1 { charMoved = SDL.Map.move(@, @.char, 3) }
+		if SDL.getKey"RIGHT" % 2 == 1 { charMoved = SDL.Map.move(@, @.char, 1) }
+		if SDL.getKey"UP" % 2 == 1 { charMoved = SDL.Map.move(@, @.char, 2) }
+		if SDL.getKey"DOWN" % 2 == 1 { charMoved = SDL.Map.move(@, @.char, 0) }
+	}
+	
+	// マップスクロール
+	while @.x + @.char.x * @.tileWidth < screenWidth / 3 and @.x < 0 { @.x = @.x + @.tileWidth * @.scale }
+	while @.x + @.char.x * @.tileWidth > screenWidth * 2 / 3
+		and @.x + @.tileWidth * @.scale * @.xNum > screenWidth { @.x = @.x - @.tileWidth * @.scale }
+	while @.y + @.char.y * @.tileHeight < screenHeight / 3 and @.y < 0 { @.y = @.y + @.tileHeight * @.scale }
+	while @.y + @.char.y * @.tileHeight > screenHeight * 2 / 3
+		and @.y + @.tileHeight * @.scale * @.yNum > screenHeight { @.y = @.y - @.tileHeight * @.scale }
+	
+	// マップ描画
+	for i = 1, @.xNum * @.yNum { // タイル描画
+		local tile = @.tiles[i] and @.tiles[i].texture
+		
+		if tile {
+			tile->draw(@.x + (i-1) % @.xNum * @.tileWidth * @.scale,
+				@.y + (i-1) $ @.xNum * @.tileHeight * @.scale, @.tileWidth * @.scale, @.tileHeight * @.scale)
+		}
+	}
+	for _, event in pairs(@.events) { // イベント描画
+		if event.texture {
+			event.texture->draw(@.x + (event.x-1) * @.tileWidth * @.scale,
+				@.y + (event.y-1) * @.tileWidth * @.scale, @.tileWidth * @.scale, @.tileHeight * @.scale)
+		}
+		// イベント実行判定
+		if @.state == 2 and event.event and SDL.Map.isContact(@.char, event) {
+			// キー押しで実行 or 接触で実行（主人公が動いてきた時に実行）
+			if (event.key and SDL.getKey(event.key) == 1) or (!event.key and charMoved) {
+				@.state = 1 // 描画のみ実行可に
+				SDL.App.routine[1000] = def(){ // ゲームルーチン1000番にイベント登録
+					yield()
+					SDL.Map.Player.event = event // 現在実行中のイベントをグローバル変数に登録
+					SDL.Map.conductor->execute(event.event)
+					SDL.Map.Player.event = nil
+					@.state = 2 // 実行可能状態に戻す
+				}
+			}
+		}
+	}
+	if @.char.texture { // 主人公描画
+		@.char.texture->draw(@.x + (@.char.x-1) * @.tileWidth * @.scale,
+			@.y + (@.char.y-1) * @.tileWidth * @.scale, @.tileWidth * @.scale, @.tileHeight * @.scale)
+	}
+}

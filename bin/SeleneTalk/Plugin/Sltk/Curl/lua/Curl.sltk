@@ -1,0 +1,11 @@
+/* Sltk.Curlコールバック設定関数をクラスに追加 */
+local meta = getmetatable(Sltk.Curl)
+setmetatable(Sltk.Curl, :{})
+for _, v in pairs :{'get', 'post', 'progress', 'debug'} {
+	Sltk.Curl['setFunction_'..v] = def(@, callback){
+		Sltk.setCurlFunction(@, v, callback)
+	}
+}
+setmetatable(Sltk.Curl, meta)
+
+using(Sltk)

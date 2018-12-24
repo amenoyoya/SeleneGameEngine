@@ -1,0 +1,119 @@
+/*** 画像テクスチャクラス ***/
+
+/* -- メソッド定義 -- */
+local def open(@, filename, colorKey){
+	local data, size = SDL.readFile(filename)
+	if !@->__SDL_Texture_open(SDL.loadImage(data, size, colorKey), true) {
+		error("画像ファイル'"..filename.."'の読み込みに失敗\n"..getMessage(@))
+	}
+}
+
+local def setAngle(@, angle){
+	@.angle = angle or 0
+}
+
+// 色を反転させる
+local def flipColor(@){
+	local pixels = @->getPixelData()
+	for i = 1, #pixels, @->getFormat() {
+		pixels[i]   = -1 * pixels[i]
+		pixels[i+1] = -1 * pixels[i+1]
+		pixels[i+2] = -1 * pixels[i+2]
+	}
+	return @->setPixelData(pixels)
+}
+
+// 指定位置を画像の中心にして描画
+local def drawCenter(@, x, y, w, h, sx, sy, sw, sh){
+	if w == nil { w = -1 }
+	if h == nil { h = -1 }
+	if sx == nil { sx = 0 }
+	if sy == nil { sy = 0 }
+	if sw == nil { sw = -1 }
+	if sh == nil { sh = -1 }
+	return @->draw(x - (w == -1 and @->getWidth() or w) / 2,
+		y - (h == -1 and @->getHeight() or h) / 2, w, h, sx, sy, sw, sh)
+}
+
+
+/* -- 画像テクスチャクラス -- */
+def SDL.Image(filename, colorKey){
+	local @ = SDL.Texture()
+	
+	@.__SDL_Texture_open = @.open
+	@.open, @.setAngle, @.flipColor, @.drawCenter = open, setAngle, flipColor, drawCenter
+	if type(filename) == 'string' { @->open(filename, colorKey) }
+	return @
+}
+
+
+/* -- 分割画像クラス -- */
+local Sprite = class :{
+	constructor = def(@, image, sx, sy, sw, sh){
+		@.srcTexture = image
+		@.srcX, @.srcY = sx, sy
+		@.srcWidth, @.srcHeight = sw, sh
+		@.blendMode = SDL.BLEND_ALPHA
+		@.color = SDL.Color(255, 255, 255)
+		@.cx, @.cy = -1, -1
+		@.angle = 0
+	},
+	
+	// ブレンディング
+	setBlendMode = def(@, mode){
+		@.blendMode = mode or SDL.BLEND_ALPHA
+	},
+	
+	// 色設定
+	setColor = def(@, color){
+		@.color = tolua.type(color) == 'Sltk::SDL::Color' and color or SDL.Color(255, 255, 255)
+	},
+	setAlpha = def(@, alpha){
+		@.color.alpha = alpha or 255
+	},
+	
+	// 回転設定
+	setRotationCenter = def(@, cx, cy){
+		@.cx, @.cy = cx or -1, cy or -1
+	},
+	setAngle = setAngle,
+	
+	// 描画(w, hを省略すると原寸大)
+	draw = def(@, x, y, w, h){
+		w = w or @.srcWidth
+		h = h or @.srcHeight
+		@.srcTexture.centerX = (@.cx == -1 and w / 2 or @.cx)
+		@.srcTexture.centerY = (@.cy == -1 and h / 2 or @.cy)
+		@.srcTexture.angle = @.angle
+		return @.srcTexture->setBlendMode(@.blendMode) and @.srcTexture->setColor(@.color)
+			and @.srcTexture->draw(x, y, w, h, @.srcX, @.srcY, @.srcWidth, @.srcHeight)
+	},
+	
+	// 色を反転させる
+	flipColor = def(@){
+		return flipColor(@.srcTexture)
+	},
+	
+	// 指定位置を画像の中心にして描画
+	drawCenter = def(@, x, y, w, h){
+		return @->draw(x - (w or @->getWidth()) / 2, y - (h or @->getHeight()) / 2, w, h)
+	},
+	
+	getWidth = def(@){ return @.srcWidth },
+	getHeight = def(@){ return @.srcHeight },
+}
+
+
+/* -- 画像分割ロード -- */
+// @param xNum, yNum: 横、縦に対する分割数
+// @param width, height: 分割された画像一つの大きさ
+// @param colorKey: 透過色を指定する場合にSDL.Colorを指定
+// @return: Spriteクラスの配列
+def SDL.loadDivisionImage(filename, xNum, yNum, width, height, colorKey){
+	local image, images = SDL.Image(filename, colorKey), :{}
+	
+	for i = 1, xNum * yNum {
+		images[i] = Sprite(image, width*((i-1)%xNum), height*((i-1)$xNum), width, height)
+	}
+	return images
+}

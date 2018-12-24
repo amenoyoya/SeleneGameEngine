@@ -1,0 +1,242 @@
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+
+/*** 整数型定義 ***/
+typedef char			s8;
+typedef unsigned char	u8;
+typedef short			s16;
+typedef unsigned short	u16;
+typedef long			s32;
+typedef unsigned long	u32;
+
+namespace Sltk{
+	// 大文字・小文字を区別せずに文字列を比較する
+	// len: -1以外を指定するとlenバイト分だけ比較する（-1なら全て比較）
+	bool isSameStringIgnoreCase(const char *s1, const char *s2, u32 len=(u32)-1);
+	
+	/*** 文字列エンコーディング関連 ***/
+	namespace Encoding{
+		// エンコーディングタイプ
+		enum Type{
+			UNKNOWN,
+			BINARY,
+			ANSI,
+			SJIS,
+			JIS,
+			EUC,
+			ISO2022JP,
+			UTF8,
+			UTF16BE,
+			UTF16LE,
+			UTF32BE,
+			UTF32LE
+		};
+		
+		// 対象文字列のエンコーディング名取得
+		string getName(const char *target);
+		
+		// UTF-8文字列か判定(0=YES, 1=BOM付, -1=NO)
+		s8 isUTF8(const string &target);
+		
+		// 対象文字列を任意のフォーマットにエンコード
+		// fromEncoding: 対象文字列のエンコーディングタイプ。ENC_UNKNOWNなら自動判別
+		string encode(const char *target, u8 toEncoding, u8 fromEncoding=UNKNOWN);
+		
+		// 対象文字列をUTF-8にエンコーディング
+		// fromEncoding: 対象文字列のエンコーディングタイプ。ENC_UNKNOWNなら自動判別
+		string toUTF8(const char *target, u8 fromEncoding=UNKNOWN);
+	}
+	
+	
+	/* コンソール制御関連 */
+	namespace Console{
+		// UTF-8文字列標準出力
+		void writeLine(const char *str);
+		void write(const char *str);
+		
+		// コンソール色
+		enum Color{
+			BLACK,
+			BLUE,
+			GREEN,
+			CYAN,
+			RED,
+			PURPLE,
+			YELLOW,
+			WHITE
+		};
+		
+		// コンソールテキストの色・属性を設定する
+		// 引数 : 前景色, 背景色, 高輝度フラグ, 下線フラグ
+		bool setAttribute(s8 wFore=WHITE, s8 wBlack=BLACK, bool bHigh=false, bool bUnderscore=false);
+		
+		// カーソルの位置をセットする
+		bool setCursorPosition(s16 shXPos, s16 shYPos);
+		
+		// 画面を消去する
+		bool clear();
+		
+		// キー入力があるか調べる
+		bool isKeyPressed();
+		
+		// 入力されたキーコードを取得する
+		s32 getPressedKey();
+	}
+	
+	
+	/*** システム関連 ***/
+	namespace System{
+		// コマンド実行
+		s32 execute(const char *cmd);
+		// スリープ
+		void sleep(u32 msec);
+		
+		/* 環境変数 */
+		// 環境変数定義
+		bool setEnvironmentVariable(const char *name, const char *val);
+		// 環境変数取得
+		string getEnvironmentVariable(const char *name);
+		
+		/* 作業ディレクトリ */
+		// 作業ディレクトリ変更
+		bool setCurrentDirectory(const char *dir);
+		// 作業ディレクトリ取得
+		string getCurrentDirectory();
+	}
+	
+	
+	/*** 時間関連 ***/
+	struct DateTime{
+		u32 sec,	// 秒 [0-61] 最大2秒までのうるう秒を考慮
+			min,	// 分 [0-59]
+			hour,	// 時 [0-23]
+			day,	// 日 [1-31]
+			month,	// 月 [1-12]
+			year,	// 年 [1901～]
+			week;	// 曜日 [0:日 1:月 ... 6:土]
+		DateTime();
+	};
+	
+	// 年月日を計算
+	bool getDate(DateTime *dest, u32 timer=time(nullptr));
+	
+	// システム時間を取得(ミリ秒単位)
+	u32 getSystemTime();
+	
+	
+	/* オブジェクト状態 */
+	struct Object{
+		enum Status{NONE, ACTIVE, FAILED, FINISHED, BUSY};
+	};
+	
+	// オブジェクトの状態・メッセージを取得
+	u8 getState(Object *obj);
+	string getMessage(Object *obj);
+	
+	
+	/*** 乱数発生器 ***/
+	class Randomizer: public Object {
+	public:
+		explicit Randomizer(s32 _seed=(s32)time(nullptr));
+		explicit Randomizer(s32 seedsNum, s32 seeds[seedsNum]);
+		
+		// 乱数の種を植える
+		void seed(s32 _seed);
+		void seed(s32 seedsNum, s32 seeds[seedsNum]);
+		
+		// 32bitの乱数生成
+		u32 get();
+		// 0～r-1までの32bit乱数生成
+		u32 get(u32 r);
+		// min～maxまでの32bit乱数生成
+		s32 get(s32 min, s32 max);
+	};
+	
+	
+	/*** バイナリ管理クラス ***/
+	/* Binary.state */
+	enum BinaryState{
+		BINARY_CONTROL = 1,
+		BINARY_ALLOCATE = 5,
+	};
+	
+	class Binary: public Object {
+	public:
+		Binary();
+		explicit Binary(void *p);
+		explicit Binary(u32 size);
+		~Binary();
+		
+		// ポインタ直接制御モード(BINARY_CONTROL)
+		void set(void *p);
+		
+		// メモリ割り当てモード(BINARY_ALLOCATE)
+		void allocate(u32 size);
+		
+		// メモリサイズ変更
+		// ポインタ位置は先頭に変更される
+		void resize(u32 size); // only BINARY_ALLOCATE or NONE
+		
+		// メモリ解放
+		void release();
+		
+		// サイズは変えず、メモリの割当てのみ行う。
+		// 追加するバイナリの大きさがある程度分かっているなら
+		// reserveしてからpush～していく方が高速
+		void reserve(u32 size); // only BINARY_ALLOCATE
+		
+		s8& operator [](u32 i);
+		
+		void *getPointer(u32 head=0);
+		u32 getSize() const; // only BINARY_ALLOCATE
+		// 現在位置取得
+		u32 getPosition() const;
+		
+		// バイナリをプッシュ
+		void push(const void *data, u32 size);
+		
+		// 数値をバイナリとして追加
+		void pushValue(u32 data, u8 size=4);
+		// precision: 精度(デフォルトは6)
+		void pushNumber(double data, u8 precision=6);
+		
+		// 文字列をバイナリとして追加
+		void pushString(const char *data, u32 size=u32(-1));
+		// 文字列を文字数と一緒に追加
+		void pushStringData(const char *data);
+		
+		// バイナリの現在位置から数値を取り出す
+		s32 getS32();
+		u32 getU32();
+		s16 getS16();
+		u16 getU16();
+		s8 getS8();
+		u8 getU8();
+		double getNumber();
+		
+		// ポインタを文字列として取得
+		string getPointerString(u32 head=0);
+		// バイナリの現在位置からsize分の文字列を取り出す
+		string getString(u32 size);
+		// バイナリの現在位置からpushStrDataで入れた文字列を取り出す
+		string getStringData();
+		
+		// バイナリの現在位置からsize文のバッファを取り出す
+		const void *get(u32 size);
+		
+		// 読み込み位置を変更する
+		void seek(s32 mov, u8 mode=SEEK_SET);
+		
+		// バイナリをキー文字列で簡易暗号化・復号化
+		// only BINARY_ALLOCATE
+		void encode(const char *key, u32 keysize=16);
+		bool decode(const char *key, u32 keysize=16); // 暗号化時のキーと異なるキーが指定されると失敗
+	};
+	
+	// バイナリデータから4バイトのハッシュ(CRC32)を生成
+	// 文字列indexの検索を行う場合、文字列比較するよりCRC32ハッシュの比較を行うほうが速い
+	// ただし偶然一致する可能性(16の8乗分の1)もある
+	u32 getCRC32(const void *buffer, u32 bufferlen, u32 crc32_start=0xffffff);
+	u32 getCRC32(const char *str);
+}

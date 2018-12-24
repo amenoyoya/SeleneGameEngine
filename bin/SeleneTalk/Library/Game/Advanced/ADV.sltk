@@ -1,0 +1,259 @@
+require "../RichText/__Main"
+
+/* SDL.ADV.appendKeyWait用 */
+local def waitKey(@, ch){
+	// 完全スキップ以外ならキー入力待ち関数を実行
+	if @.state & SDL.ADV_SHOW != 0 and @.state & SDL.ADV_SKIP == 0 {
+		@.state = (@.state & bnot(SDL.ADV_FAST)) | SDL.ADV_WAIT // FastShowを解除しキー入力待ち状態に
+		yield(5) // キー入力待ちにする前に5フレーム待つ
+		while true {
+			if SDL.getKey"OK" == 1 or SDL.getMouse(SDL.MOUSE_LEFT) == 1
+				or SDL.getMouse"WheelY" == 1 or SDL.getKey"SKIP" == 1 { break }
+			@->onKeyWaiting(ch) // onKeyWaiting仮想関数を実行
+			yield()
+		}
+		yield() // いきなりFastShowモードになるのを防ぐため，yieldしてから入力待ち状態を解除
+		@.state = @.state & bnot(SDL.ADV_WAIT)
+	}
+}
+
+/*** デフォルトのマークアップパーサーにADV実行用コマンドを追加 ***/
+local MarkupParser = require "../RichText/MarkupParser"
+local ADVParser = :{
+	grammar = table.getclone(MarkupParser.grammar),
+}
+
+// パーサークラス
+ADVParser.Parser = class(MarkupParser.Parser):{
+	constructor = def(@, adv){ // adv: SDL.ADVオブジェクト
+		MarkupParser.Parser.constructor(@, adv)
+	},
+	
+	compile = def(@){
+		lpeg.Parser.compile(@, ADVParser.grammar, "\\") // エスケープ文字は"\"
+	},
+}
+
+
+// ADVシステム実行状態
+SDL.ADV_NONE = 0x00 // 終了
+SDL.ADV_SHOW = 0x01 // 描画
+SDL.ADV_EXEC = 0x02 // ADV(文字送り処理)実行
+SDL.ADV_FAST = 0x04 // 一気に文字表示
+SDL.ADV_SKIP = 0x08 // スキップ
+SDL.ADV_WAIT = 0x10 // キー入力待ち
+SDL.ADV_STOP = 0x20 // ADV一時停止
+SDL.ADV_END  = 0x40 // ADV終了中
+SDL.ADV_HIDE = 0x80 // 描画しない
+
+/*** ADV実行システム ***/
+SDL.ADV = class(SDL.RichText):{
+	constructor = def(@, x, y, parser){
+		SDL.RichText.constructor(@, parser or ADVParser.Parser)
+		@.routine = Routine() // ADVシステム用のルーチン
+		@.routineCount = 1 // 現在何番までのルーチンを使用しているか
+		@.x, @.y = x or 0, y or 0 // 描画位置
+		@.state = SDL.ADV_NONE // 実行状態
+		@.window = :{ // 背景ウィンドウ描画情報
+			x = nil, y = nil, width = nil, height = nil, alpha = 0
+		}
+		@.keyWaitImage = SDL.TextLayer"▼" // キー入力待ち画像
+		@.keyWaitImage.alpha, @.keyWaitImage.alpha_v = 255, -5
+	},
+	
+	/* ADVを実行 */
+	// ゲームルーチン内でのみ実行可能
+	// stand: 文字位置(x,y)の基準[=2]． 0=上(左)、1=中央、2=下(右)
+	// alignBaseSize: 行(列)を寄せる時の基準サイズ．寄せ方は @.align で指定したもの[=nil]
+	execute = def(@, text, stand, alignBaseSize){
+		@->clear() // 前回作成したRichText等クリア
+		
+		/* RichTextを作成して実行 */
+		@->parse(text)
+		@->alignPositions(stand, alignBaseSize)
+		
+		// 背景ウィンドウ描画処理登録(ADVシステムルーチン-1番を割り当てる)
+		@.routine[-1] = def(){
+			@->onStarting() // 背景ウィンドウ出現処理
+			@.state = @.state | SDL.ADV_EXEC // ADVシステム開始
+			while true {
+				if @.state & SDL.ADV_SHOW != 0 {
+					@->onDrawing() // ADVシステムが終了するまで背景ウィンドウ描画
+				}
+				yield()
+			}
+		}
+		
+		// 文字送り処理登録(ADVシステムルーチン0番を割り当てる)
+		@.routine[0] = def(){
+			for line = 1, #@.lines {
+				for c = 1, #@.lines[line] {
+					local ch = @.lines[line][c]
+					// 文字送り不可，もしくは一時停止状態ならここでループ
+					while @.state & SDL.ADV_EXEC == 0 or @.state & SDL.ADV_STOP != 0 { yield() }
+					// RichCharの onTracked メソッドを実行する
+					if ch.onTracked { ch.onTracked(@, ch) }
+					// RichCharに onTracked メソッドがないなら自身の onTracked メソッドを実行する
+					else { @->onTracked(ch) }
+					@.routineCount = @.routineCount + 1
+				}
+			}
+			while @.state & SDL.ADV_STOP != 0 { yield() } // 一時停止状態ならここでループ
+			@.state = SDL.ADV_END // 終了状態(onFinishing実行状態)に
+		}
+		
+		@.state = SDL.ADV_SHOW // 描画状態に
+		// テキストの描画とADVシステムルーチンの実行
+		while @.routine[0] {
+			if @.state & SDL.ADV_SHOW != 0 { // 表示中ならルーチン実行
+				if @.state & SDL.ADV_STOP == 0 { // ADVシステムが停止していない場合
+					@->onRunning() // onRunning メソッド実行
+				}
+				@.routine->execute()
+			}
+			yield()
+		}
+		if @.state == SDL.ADV_END { @->onFinishing() } // 背景ウィンドウ消去処理
+		@.state = SDL.ADV_NONE // 終了
+	},
+	
+	/* ADVルーチンクリアなど */
+	clear = def(@){
+		SDL.RichText.clear(@)
+		@.routine->clear() // ADVルーチンをクリア
+		@.routineCount = 1
+		@.state = SDL.ADV_NONE
+	},
+	
+	/* 関数を実行するRichCharの挿入 */
+	// func: function(SDL.ADV, RichChar)->void
+	// n: 挿入する数[=1]
+	// param: その他情報を挿入したい場合指定
+	appendFunction = def(@, func, n, param){
+		@->call('append', n or 1, def(){
+			local obj = :{ onTracked = func }
+			if param { table.copy(param, obj) }
+			return obj
+		})
+	},
+	
+	/* キー入力待ちコマンドの挿入 */
+	// n: 挿入するキー入力待ちコマンドの数[=1}
+	appendKeyWait = def(@, n){
+		@->call('append', n or 1, def(){
+			return :{
+				width = @.vertical and @.keyWaitImage->getWidth() or 0,
+				height = @.vertical and 0 or @.keyWaitImage->getHeight(),
+				onTracked = waitKey
+			}
+		})
+	},
+	
+	/** 仮想関数 **/
+	// 背景ウィンドウ出現処理
+	onStarting = def(@){
+		while @.window.alpha < 150 {
+			@->onDrawing()
+			@.window.alpha = @.window.alpha + 10
+			yield()
+		}
+	},
+	
+	// 背景ウィンドウ描画処理
+	onDrawing = def(@){
+		SDL.fillRectangle(@.window.x or (@.x - 10), @.window.y or (@.y - 10),
+			@.window.width or (@->getWidth() + (@.vertical and 20 or 50)),
+			@.window.height or (@->getHeight() + (@.vertical and 50 or 20)), SDL.Color(0,150,150,@.window.alpha))
+	},
+	
+	// 背景ウィンドウ消去処理
+	onFinishing = def(@){
+		while @.window.alpha > 0 {
+			@->onDrawing()
+			@.window.alpha = @.window.alpha - 10
+			yield()
+		}
+	},
+	
+	// システム実行中関数
+	onRunning = def(@){
+		if @.state & SDL.ADV_WAIT == 0 and // キー入力待ち中でない場合
+			(SDL.getKey"OK" == 1 or SDL.getMouse(SDL.MOUSE_LEFT) == 1 or SDL.getMouse"WheelY" == 1)
+		{ // メッセージ出現中にクリックされたら一気に表示
+			@.state = @.state | SDL.ADV_FAST // FastShow
+		}elif SDL.getKey"SKIP" > 0 { // スキップキー入力中はスキップ
+			@.state = @.state | SDL.ADV_SKIP // Skip
+		}else{ // FastShow, Skip 解除
+			@.state = @.state & bnot(SDL.ADV_FAST) & bnot(SDL.ADV_SKIP)
+		}
+	},
+	
+	// キー入力待ち中実行関数
+	onKeyWaiting = def(@, ch){
+		@.keyWaitImage->setColor(SDL.Color(55,155,255,@.keyWaitImage.alpha))
+		@.keyWaitImage->draw(@.x+ch.x+2, @.y+ch.y+2)
+		@.keyWaitImage.alpha = @.keyWaitImage.alpha + @.keyWaitImage.alpha_v
+		if @.keyWaitImage.alpha % 255 == 0 { @.keyWaitImage.alpha_v = -@.keyWaitImage.alpha_v }
+	},
+	
+	// 一文字描画関数
+	onTracked = def(@, ch){
+		// ADVシステムルーチンに一文字を描画する(じわっと出現する)処理を追加する
+		@.routine[@.routineCount] = def(){
+			local alpha = (@.state & SDL.ADV_FAST != 0 or @.state & SDL.ADV_SKIP != 0)
+				and ch.color.alpha or 0 // スキップ中ならすぐ出現
+			local v = ch.color.alpha $ 10 // 10フレームで出現させる
+			
+			while true {
+				if alpha < ch.color.alpha { // じわっと出現
+					if @.state & SDL.ADV_FAST != 0 or @.state & SDL.ADV_SKIP != 0 {
+						// 出現中にスキップされたらすぐ出現
+						alpha = ch.color.alpha
+					}
+					ch->draw(@.x, @.y, alpha)
+					alpha = alpha + v
+					if alpha >= ch.color.alpha { alpha = ch.color.alpha }
+				}else{
+					ch->draw(@.x, @.y, alpha)
+				}
+				yield()
+			}
+		}
+		// 一文字表示毎に5フレーム待機
+		local frame, wait = 0, 5
+		while wait > frame {
+			if @.state & SDL.ADV_FAST != 0 or @.state & SDL.ADV_SKIP != 0 {
+				// スキップされたら待機解除
+				break 
+			}
+			frame = frame + 1
+			yield()
+		}
+	},
+}
+
+/* キー入力待ちコマンド [l] */
+ADVParser.grammar.keyWait = lpeg.C("[" * lpeg.space^0 * "l" * lpeg.space^0 * "]") * lpeg.Cp()
+def ADVParser.Parser->keyWait(capture, fin){
+	if @.escape { // エスケープされているならappendText
+		@.parent->call('appendText', capture)
+		return fin
+	}
+	@.parent->appendKeyWait()
+	return fin
+}
+
+/* 停止コマンド [s] */
+ADVParser.grammar.stop = lpeg.C("[" * lpeg.space^0 * "s" * lpeg.space^0 * "]") * lpeg.Cp()
+def ADVParser.Parser->stop(capture, fin){
+	if @.escape { // エスケープされているならappendText
+		@.parent->call('appendText', capture)
+		return fin
+	}
+	@.parent->appendFunction(def(adv, ch){
+		adv.state = adv.state | SDL.ADV_STOP // 停止状態に
+	})
+	return fin
+}
+
+return ADVParser

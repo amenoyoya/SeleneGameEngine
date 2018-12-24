@@ -1,0 +1,14 @@
+local glu = ffi.load"glu32.dll"
+
+ffi.cdef[[
+void gluPerspective(double fovy, double aspect, double zNear, double zFar);
+void gluLookAt(double eyeX, double eyeY, double eyeZ, double centerX, double centerY, double centerZ, double upX, double upY, double upZ);
+void *gluNewQuadric();
+void gluSphere(void *quad, double radius, int slices, int stacks);
+void gluDeleteQuadric(void *quad);
+]]
+
+def gluPerspective(fovy, aspect, zNear, zFar){ glu.gluPerspective(fovy, aspect, zNear, zFar) }
+def gluLookAt(eyeX, eyeY, eyeZ, centerX, centerY, centerZ, upX, upY, upZ){ glu.gluLookAt(eyeX, eyeY, eyeZ, centerX, centerY, centerZ, upX, upY, upZ) }
+def gluNewQuadric(){ return ffi.gc(glu.gluNewQuadric(), glu.gluDeleteQuadric) }
+def gluSphere(quad, radius, slices, stacks){ glu.gluSphere(quad, radius, slices, stacks) }

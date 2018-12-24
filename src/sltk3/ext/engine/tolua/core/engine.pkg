@@ -1,0 +1,23 @@
+namespace Sltk{
+	namespace Engine{
+		/* スクリプトファイルリーダー取得 */
+		FileReader *getFileReader();
+		
+		/* Lua/SeleneTalkをコンパイルしてBinaryに格納 */
+		// luaとしてコンパイルする場合はluaMode=trueとする
+		bool compile(const char *code, Binary *dest, const char *name="string",
+			bool luaMode=false, bool strip=true);
+		
+		/* ディレクトリをアーカイブ化する */
+		// ディレクトリ内の .lua, .sltk はコンパイルして .sym にする(comp=falseならコンパイルしない)
+		// key: zipパスワード
+		// level: zip圧縮レベル(0-9)
+		// rootDir: zip内の仮想ルートディレクトリ名
+		bool encodeDirectory(const char *dirPath, const char *outputFile,
+			const char *key="", u8 level=6, const char *mode="w", const char *rootDir="", bool comp=true);
+		
+		/* ディレクトリを復号化キー埋め込みアーカイブ化 */
+		// スクリプト格納ディレクトリ用
+		bool encodeScriptDirectory(const char *dirPath, const char *outputFile, const char *key="", u8 level=6);
+	}
+}

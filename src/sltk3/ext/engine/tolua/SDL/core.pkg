@@ -1,0 +1,404 @@
+namespace Sltk{
+	namespace SDL{
+		// SDLエラーメッセージ取得
+		string getMessage();
+		
+		// レンダラードライバー数
+		u32 getRendererDriverCount();
+		
+		// レンダラードライバー名
+		string getRendererDriverName(u32 index);
+		string getRendererName(u32 handle); // レンダラーハンドルから取得
+		
+		// 現在の描画対象スクリーンの描画色を設定
+		bool setColor(const Color &color);
+		
+		// 現在の描画対象スクリーンをクリア
+		bool clearScreen();
+		
+		// ブレンドモード変更
+		bool setBlendMode(u8 mode=BLEND_ALPHA);
+		
+		
+		/* イベント処理 */
+		// デフォルトイベントプロシージャ
+		// ×ボタンでの終了処理、マウスホイール処理など
+		bool defaultEventProcedure(Event *ev);
+		
+		// イベントを発生させる
+		bool pushEvent(Event *ev);
+		
+		/* マウスカーソル可視設定 */
+		void showCursor(bool visible=true);
+		
+		
+		/** TextInput関連 **/
+		void startTextInput();
+		bool isTextInputActive();
+		void stopTextInput();
+		
+		
+		/*** クリップボード関連 ***/
+		bool setClipboardText(const char *text);
+		string getClipboardText();
+		bool hasClipboardText();
+		
+		
+		/*** 画像関連 ***/
+		// SDL_Surface解放
+		void freeImage(u32 surf);
+		
+		// 画像ファイル(データ)からSDL_Surface作成
+		// colorKey: 指定された場合、その色を透過色とする(BMPを透過したいときなど)
+		u32 loadImage(const void *data, u32 size, const Color *colorKey=nullptr);
+		
+		// RGBデータからSDL_Surface作成
+		// alpha: trueならRGBAデータを使用
+		u32 createImage(const void *data, u32 w, u32 h, bool alpha=false);
+		
+		// SDL_Surfaceを画像として保存
+		// release: trueなら渡されたSDL_Surfaceを自動的に解放
+		bool saveImage(u32 surface, const char *filename, u8 type=SAVE_BMP, bool release=true);
+		
+		
+		/* SDL_Surfaceの情報を取得 */
+		// 幅
+		u32 getImageWidth(u32 surface);
+		// 高さ
+		u32 getImageHeight(u32 surface);
+		// ピクセルデータ1行分のバイト数
+		u32 getImagePitch(u32 surface);
+		// ピクセルデータ
+		void *getImagePixels(u32 surface);
+		
+		
+		// "TEXTURE_TARGET"タイプで生成したテクスチャを描画対象にする
+		// nullptrを指定すると裏画面が描画対象
+		bool setRenderTarget(Texture *texture=nullptr);
+		
+		// 描画対象スクリーンのピクセル(RGB)取得
+		// destは w * h * 3 のサイズが必要
+		bool readPixels(void *dest, u32 x, u32 y, u32 w, u32 h);
+		Color getPixel(u32 x, u32 y);
+		
+		
+		/*** 図形描画 ***/
+		// 点描画
+		bool drawPixel(s32 x, s32 y, const Color &color);
+		// 線描画
+		bool drawLine(s32 x1, s32 y1, s32 x2, s32 y2, const Color &color);
+		// 矩形描画
+		bool drawRectangle(s32 x, s32 y, s32 w, s32 h, const Color &color);
+		// 矩形塗りつぶし
+		bool fillRectangle(s32 x, s32 y, s32 w, s32 h, const Color &color);
+		
+		
+		/*** SDL_Windowラッパー ***/
+		enum WindowFlag{
+			WINDOW_FULLSCREEN = 0x00000001,         /**< fullscreen window */
+			WINDOW_OPENGL = 0x00000002,             /**< window usable with OpenGL context */
+			WINDOW_SHOWN = 0x00000004,              /**< window is visible */
+			WINDOW_HIDDEN = 0x00000008,             /**< window is not visible */
+			WINDOW_BORDERLESS = 0x00000010,         /**< no window decoration */
+			WINDOW_RESIZABLE = 0x00000020,          /**< window can be resized */
+			WINDOW_MINIMIZED = 0x00000040,          /**< window is minimized */
+			WINDOW_MAXIMIZED = 0x00000080,          /**< window is maximized */
+			WINDOW_INPUT_GRABBED = 0x00000100,      /**< window has grabbed input focus */
+			WINDOW_INPUT_FOCUS = 0x00000200,        /**< window has input focus */
+			WINDOW_MOUSE_FOCUS = 0x00000400,        /**< window has mouse focus */
+			WINDOW_FOREIGN = 0x00000800,            /**< window not created by SDL */
+			WINDOW_ALLOW_HIGHDPI = 0x00002000       /**< window should be created in high-DPI mode if supported */
+		};
+		
+		/* レンダラーにOpenGLを使って2D描画を行う場合，ウィンドウ作成後set2DViewを呼び出す */
+		class Window: public Sltk::Object {
+		public:
+			/* 入力状態 */
+			u32 keyRepeatTime; // キーリピート判定時間[ms]（デフォルト：0.5秒）
+			// キー押下状態(0:押されていない, 1:今押された, 2:押されている, 3:キーリピート)
+			u8 key[285];
+			u8 sendKey[285]; // キーエミュレーション用
+			// マウスボタン押下状態(0:押されていない, 1:今押された, 2:押されている, 3:キーリピート)
+			u8 mouse[3];
+			u8 sendMouse[3]; // マウスボタンエミュレーション用
+			// マウスホイール状態
+			u32 mouseWheelX, mouseWheelY;
+			// マウスカーソル位置
+			s32 mouseX, mouseY;
+			
+			/* アクティブ化状態 */
+			u8 activated; // 0:非アクティブ，1:非アクティブ化された，2:アクティブ，3:アクティブ化された
+			
+			/* コンストラクタ */
+			// コンストラクタで背景色設定
+			explicit Window(const Color &bg=Color(0,0,0));
+			~Window();
+			
+			// x, yに-1を指定すると中央に表示
+			// flag: ウィンドウフラグ．描画エンジンに"opengl"を指定した場合，WINDOW_OPENGLは自動的に付加される
+			// rendererName: 使用する描画エンジン。"direct3d","opengl","opengles2","software"など
+			bool open(const char *title="SDL_Window", s32 x=-1, s32 y=-1, s32 w=640, s32 h=480,
+				u32 flag=0, const char *rendererName="opengl");
+			void close();
+			
+			/* 描画開始・終了 */
+			// 描画開始時に入力状態も取得
+			bool beginScene();
+			void endScene();
+			
+			/* 明示的に入力状態を取得/クリアしたい場合に使用 */
+			// キーボードの全入力状態を取得・格納(key[ID])
+			void acquireKeyStates();
+			// キーボードの全入力状態をクリア
+			void clearKeyStates();
+			// マウスの全入力状態(ホイール以外)を取得・格納(mouse[ID], mouse***)
+			void acquireMouseStates();
+			// マウスの全入力状態をクリア
+			void clearMouseStates();
+			/************************************************/
+			
+			// マウスカーソルを指定位置に移動
+			void warpMouse(s32 x, s32 y);
+			
+			// 背景色取得
+			Color getBackgroundColor() const;
+			// サイズ取得
+			u32 getWidth() const;
+			u32 getHeight() const;
+			// 位置取得
+			s32 getX() const;
+			s32 getY() const;
+			// ID取得
+			u32 getID() const;
+			
+			// 背景色設定
+			void setBackgroundColor(const Color &bg);
+			// タイトル設定
+			void setTitle(const char *title);
+			// サイズ設定
+			void setSize(u32 w, u32 h);
+			// 位置設定
+			void setPosition(s32 x, s32 y);
+			// ウィンドウモード切り替え. (true: Window, false: Fullscreen)
+			bool setWindowMode(bool flag);
+			
+			// アイコン設定
+			// surf: loadImageなどで取得
+			bool setIcon(u32 surf, bool release=true);
+			
+			u32 getHandle() const;
+			u32 getRenderer() const;
+			u32 getContext() const;
+		};
+		
+		// WindowIDからWindowオブジェクト取得
+		Window *getWindowFromID(u32 id);
+		
+		// Windowオブジェクトの数を取得
+		u32 getWindowsCount();
+		
+		// 現在の描画対象ウィンドウを取得
+		Window *getDrawingWindow();
+		
+		// 現在の描画レンダラーを取得
+		u32 getDrawingRenderer();
+		
+		
+		/*** FPS制御クラス ***/
+		class FPSManager: public Sltk::Object {
+		public:
+			/* デフォルトのFPS目標値は60 */
+			explicit FPSManager(s32 FPS=60);
+			
+			/* 一定化したいFPSの目標値を設定 */
+			// 負値を与えるとCPUの限界パワーで回す
+			void setFPS(s32 FPS);
+			
+			/* FPS制御タイマーを開始 */
+			void start();
+		    
+			/* FPS一定化開始・終了 */
+			// beginScene～endSceneの間でメイン描画を行う
+			void beginScene();
+			void endScene();
+			
+			u32 getFPS() const;
+		};
+		
+		
+		/*** ジョイスティック管理クラス ***/
+		class Joystick: public Sltk::Object {
+		public:
+			s32 xAxis, yAxis; // アナログスティック(十字ボタン)の傾き状態 (-32768 to 32767)
+			u8  buttons[32];  // ボタンの入力状態 (0:押されていない, 1:今押された, 2:押されている)
+			u8  crossButtons[4]; // 十字ボタンの入力状態 (0:押されていない, 1:今押された, 2:押されている)
+		public:
+			Joystick();
+			explicit Joystick(u32 index);
+			~Joystick();
+			
+			// 利用可能なジョイスティックのうちindex番目のジョイスティックをopenする
+			bool open(u32 index);
+			void close();
+			
+			// ジョイスティックの入力状態を取得・格納
+			void acquireInputStates();
+			
+			// ジョイスティック名
+			string getName() const;
+			// アナログスティックの軸の数
+			u32 getAxisCount() const;
+			// ボタンの数
+			u32 getButtonCount() const;
+		};
+		
+		// 利用可能なジョイスティックの数を取得
+		u32 getJoystickCount();
+		
+		
+		/*** 効果音・BGM再生クラス ***/
+		class Mixer: public Sltk::Object {
+		public:
+			Mixer();
+			explicit Mixer(const void *buf, u32 size);
+			~Mixer();
+			
+			// 音楽データを読み込む
+			bool open(const void *buf, u32 size);
+			void close();
+			
+			// 再生
+			// channel: 使用するチャンネル。-1を指定すると空いているチャンネルを自動検索
+			// loops: ループ回数。-1で無限ループ。0で一回のみ再生
+			// ticks: 再生する時間(ミリ秒)。-1で時間制限なし
+			bool play(s32 channel, s32 loops=0, s32 ticks=-1);
+			
+			// フェードイン再生
+			// ms: フェード時間(ミリ秒)
+			bool fadeIn(s32 channel, s32 loops, u32 ms, s32 ticks=-1);
+			
+			// 効果音の音量(0-128)
+			u32 setVolume(u32 vol); // 以前の音量が返る
+			u32 getVolume() const;
+		};
+		
+		// チャンネル数を設定する
+		u32 allocateChannels(u32 num); // 確保されたチャンネル数が返る
+		
+		
+		/*** 再生中チャンネルに対する操作。channelに-1を指定すると全チャンネル ***/
+		// 音量設定・取得
+		u32 setChannelVolume(s32 channel, u32 vol);
+		u32 getChannelVolume(s32 channel);
+		// 停止
+		void stopChannel(s32 channel);
+		void fadeOutChannel(s32 channel, u32 ms);
+		// 一時停止・再開
+		void pauseChannel(s32 channel);
+		void resumeChannel(s32 channel);
+		// 指定時間後(ミリ秒)に停止
+		void expireChannel(s32 channel, u32 ms);
+		// 再生中・停止中チェック
+		bool isChannelPlaying(s32 channel);
+		bool isChannelPaused(s32 channel);
+		
+		
+		/*** Fontクラス ***/
+		class Font: public Sltk::Object {
+		public:
+			Font();
+			explicit Font(const char *fontname, u32 size);
+			~Font();
+			
+			bool open(const char *fontname, u32 size);
+			void close();
+			
+			void setStyle(u8 style);
+			
+			// SDL_Surfaceを作成
+			u32 createSurface(const char *text);
+			
+			u32 getWidth(const char *text) const;
+			u32 getHeight() const;
+		};
+		
+		
+		/*** テクスチャ ***/
+		class Texture: public Sltk::Object {
+		public:
+			s32			 centerX, centerY;	// 回転中心(-1指定で サイズ/2 を中心に)
+			double		 angle;				// 角度
+			u8			 flipMode;			// 反転モード(0: 通常、1: 水平反転、2: 垂直反転)
+		public:
+			Texture();
+			explicit Texture(u32 w, u32 h, u8 type=TEXTURE_STREAMING);
+			explicit Texture(u32 surface, bool release);
+			~Texture();
+			
+			bool open(u32 w, u32 h, u8 type=TEXTURE_STREAMING);
+			// SDL_Surfaceからテクスチャを作成
+			// release: trueなら渡されたSDL_Surfaceを自動的に(Texture::close時)解放
+			bool open(u32 surface, bool release);
+			void close();
+			
+			// ブレンディング
+			bool setBlendMode(u8 mode=BLEND_ALPHA);
+			// 色設定
+			bool setColor(u8 r, u8 g, u8 b);
+			bool setColor(const Color &color);
+			bool setAlpha(u8 a);
+			
+			// ピクセルデータ
+			u8 getFormat() const;
+			void *getPixels();
+			// getPixels()で取得・設定したピクセルデータをテクスチャに反映
+			bool updatePixels();
+			
+			// 描画(w, hに-1を指定すると原寸大)
+			bool draw(s32 x, s32 y, s32 w=-1, s32 h=-1, s32 sx=0, s32 sy=0, s32 sw=-1, s32 sh=-1);
+			
+			u32 getHandle() const;
+			u32 getWidth() const;
+			u32 getHeight() const;
+		};
+		
+		namespace GL{
+			/*** 2D/3D切り替え ***/
+			void set2DView(u32 width, u32 height);
+			void set3DView();
+			
+			/*** OpenGLプリミティブ描画 ***/
+			// プリミティブ種類
+			enum PrimitiveType{
+				POINTS, LINES, LINE_LOOP, LINE_STRIP,
+				TRIANGLES, TRIANGLE_STRIP, TRIANGLE_FAN,
+				QUADS, QUAD_STRIP, POLYGON
+			};
+			
+			// プリミティブ描画
+			// type: プリミティブの種類, num: vertex, color配列のサイズを指定
+			// vertices: 頂点位置(x,y)を指定, colors: RGBAを0-255で指定
+			// first[=0]: 描画する頂点情報配列の開始インデックスを指定
+			// count[=-1]: 描画する頂点情報配列のサイズを指定(-1の場合numと同値)
+			void drawPrimitive(u8 type, s32 num, float vertices[num], s32 colors[num], s32 first=0, s32 count=-1);
+			
+			// 三角形描画
+			void drawTriangle(float x1, float y1, float x2, float y2, float x3, float y3, const Color &color);
+			// 三角形塗りつぶし
+			void fillTriangle(float x1, float y1, float x2, float y2, float x3, float y3, const Color &color);
+			
+			// 円描画
+			// x,y: 中心座標, radius: 半径
+			void drawCircle(float x, float y, float radius, const Color &color);
+			// 円塗りつぶし
+			void fillCircle(float x, float y, float radius, const Color &color);
+			
+			// 楕円描画
+			// x,y: 中心座標
+			// radius_x: x方向の半径, radius_y: y方向の半径
+			void drawOval(float x, float y, float radius_x, float radius_y, const Color &color);
+			// 楕円塗りつぶし
+			void fillOval(float x, float y, float radius_x, float radius_y, const Color &color);
+		}
+	}
+}

@@ -1,0 +1,51 @@
+typedef char			s8;
+typedef unsigned char	u8;
+typedef short			s16;
+typedef unsigned short	u16;
+typedef long			s32;
+typedef unsigned long	u32;
+
+namespace Sltk{
+	namespace Win32{
+		/* MessageBox */
+		s32 showMessageBox(const char *message, const char *title=_U8("メッセージ"),
+			u32 mode=SMB_OK|SMB_ICONINFORMATION, u32 hwnd=0);
+		
+		
+		/* Windowクラス用通常関数 */
+		bool adjustWindow(u32 hwnd, u32 w, u32 h);
+		bool moveWindowToCenter(u32 hwnd, bool show=true, u32 back=(u32)GetDesktopWindow());
+		
+		// Windowクラス名取得
+		string getWindowName(u32 hwnd, u32 max=256);
+		
+		// Windowタイトル設定・取得
+		u32 setWindowText(u32 hwnd, const char *text);
+		string getWindowText(u32 hwnd);
+		
+		
+		/** ウィンドウクラス ***/
+		class Window: public Sltk::Object {
+		public:
+			Window();
+			explicit Window(u32 parent, const char *title, s32 x=0x80000000, s32 y=0x80000000,
+				u32 w=640, u32 h=480, u32 style=WS_OVERLAPPEDWINDOW, u32 exstyle=0, const char *classname="", u32 id=0);
+			~Window();
+			
+			bool open(u32 parent=0, const char *title="SeleneTalkWindow", s32 x=0x80000000, s32 y=0x80000000,
+				u32 w=640, u32 h=480, u32 style=WS_OVERLAPPEDWINDOW, u32 exstyle=0, const char *classname="", u32 id=0);
+			void close();
+			
+			// styleでWS_VISIBLEを指定しない場合ウィンドウが非表示の状態で
+			// 起動するため、showメソッドを呼び出す
+			bool show(u8 flag=1);
+			
+			u32 getHandle();
+		};
+		
+		
+		/* ウィンドウプロシージャ実行 */
+		// whileループに渡す
+		bool pollWindowMessage();
+	}
+}

@@ -1,0 +1,225 @@
+require "Game"
+require "Plugin/Sltk/Win32"
+require "Win32/UIBrowser"
+
+local win, playing = nil, false // 編集中/実行中
+
+local tileattr = [=[
+壁属性：<span id="wallattr"></span>　@button{ html="変更", onclick=def(@){ changeAttribute("wall", "wallattr") } }
+　　@button{ html="同じタイルに反映", onclick=def(@){ reflectSameTiles() } }
+]=]
+
+local eventattr = [=[
+壁属性：<span id="wallattr"></span>　@button{ html="変更", onclick=def(@){ changeAttribute("wall", "wallattr") } }
+<br><br>
+イベント設定1：　常に実行されるイベント<br>
+@textarea{ id="actionedit", cols="40", rows="6" }　　@button{ html="設定", onclick=def(@){
+	local action = @->getElementByID("actionedit")->getInnerText()
+	changeAttribute("__action", nil, action)
+	changeAttribute("action", nil, assert(loadstring("return def(@, map){"..action.."}"))())
+} }<br>
+<br>
+イベント設定2：　主人公の向きを考慮：<span id="chdir"></span>　@button{ html="変更", onclick=def(@){ changeAttribute("chdir", "chdir") } }<br>
+イベント設定3：　X距離@input{ id="dx", size="2" }　y距離@input{ id="dy", size="2" }　　キー@input{ id="key", size="6" }<br>
+@textarea{ id="eventedit", cols="40", rows="6" }　　@button{ html="設定", onclick=def(@){
+	local key = @->getValue"key"
+	local event = @->getElementByID("eventedit")->getInnerText()
+	changeAttribute("dx", nil, tonumber(@->getValue"dx") or 0)
+	changeAttribute("dy", nil, tonumber(@->getValue"dy") or 0)
+	if key != "" { changeAttribute("key", nil, key) }
+	changeAttribute("__event", nil, event)
+	changeAttribute("event", nil, SDL.Conductor()->parse(event))
+} }
+]=]
+
+local ui = [=[
+タイル幅：@input{ id="tileWidth", size="2", value="16" }　タイル高さ：@input{ id="tileHeight", size="2", value="16" }　
+@button{
+	html="タイルサイズ設定", onclick=def(@){
+		SDL.Map.Editor.tileWidth = tonumber(@->getValue"tileWidth") or 16
+		SDL.Map.Editor.tileHeight = tonumber(@->getValue"tileHeight") or 16
+	}
+}<br>
+横タイル数：@input{ id="xNum", size="2", value="40" }　縦タイル数：@input{ id="yNum", size="2", value="30" }　
+@button{
+	html="タイル数設定", onclick=def(@){
+		SDL.Map.Editor.xNum = tonumber(@->getValue"xNum") or 40
+		SDL.Map.Editor.yNum = tonumber(@->getValue"yNum") or 30
+	}
+}<br><br>
+編集モード：<span id="editmode">タイル設置</span>　@button{
+	html="モード切替", onclick=def(@){
+		@->getElementByID("editmode")->setInnerHTML(changeEditMode())
+	}
+}　　タイルID：<span id="tileID">0</span><br>
+<br>
+Tile texture：@input{ id="myinput", size="16" }　@button{
+	html="タイル作成", onclick=def(@){
+		createTile(@->getValue"myinput", map)
+	}
+}　　@button{ html="保存", onclick=def(@){ saveMap() } }
+　@button{ html="読込", onclick=def(@){ loadMap() } } <br>
+<br>
+<span id="attr">]=]..tileattr..[=[
+</span><br>
+<br>
+@button{ id="playmode", html="Play", onclick=def(@){ changePlayMode() } }
+]=]
+
+// マップ保存
+def saveMap(){
+	local file = Win32.selectFile("ファイル選択", "全てのファイル/*.*",
+		System.getCurrentDirectory(), 0, win->getWindowHandle())
+	if file != "" { SDL.Map.save(SDL.Map.Editor, file) }
+}
+
+// マップ読込
+def loadMap(){
+	local file = Win32.selectFile("ファイル選択", "全てのファイル/*.*",
+		System.getCurrentDirectory(), Win32.SF_FILEMUSTEXIST, win->getWindowHandle())
+	if file != "" { SDL.Map.load(SDL.Map.Editor, file) }
+	win->setValue("tileWidth", tostring(SDL.Map.Editor.tileWidth))
+	win->setValue("tileHeight", tostring(SDL.Map.Editor.tileHeight))
+	win->setValue("xNum", tostring(SDL.Map.Editor.xNum))
+	win->setValue("yNum", tostring(SDL.Map.Editor.yNum))
+}
+
+// 編集モード切り替え
+def changeEditMode(){
+	local names = :{"タイル設置", "イベント設置", "主人公設置"}
+	SDL.Map.Editor.mode = (SDL.Map.Editor.mode + 1) % 3
+	if SDL.Map.Editor.mode == 0 and SDL.Map.Editor.tile {
+		win->getElementByID("attr")->setInnerHTML(win.parser->parse(tileattr))
+	}elif SDL.Map.Editor.mode == 1 {
+		win->getElementByID("attr")->setInnerHTML(win.parser->parse(eventattr))
+	}else{
+		win->getElementByID("attr")->setInnerHTML""
+	}
+	SDL.Map.Editor.tile = nil // 設置タイルをnilにしておく
+	return names[SDL.Map.Editor.mode+1]
+}
+
+// 編集/プレイモード切り替え
+def changePlayMode(){
+	playing = !playing
+	if playing { SDL.Map.Player->load(SDL.Map.Editor) }
+	win->getElementByID("playmode")->setInnerHTML(playing and "Edit" or "Play")
+}
+
+// タイル用レイヤー作成
+def TileLayer(R,G,B){
+	if type(R) == 'string' {
+		return SDL.TextLayer(R)
+	}else{
+		local layer = SDL.Layer(SDL.Map.Editor.tileWidth, SDL.Map.Editor.tileHeight)
+		layer->beginScene()
+		SDL.fillRectangle(0, 0, SDL.Map.Editor.tileWidth, SDL.Map.Editor.tileHeight, SDL.Color(R or 155, G or 255, B or 255))
+		layer->endScene()
+		return layer
+	}
+}
+
+// 設置するタイルを作成
+def createTile(text){
+	SDL.Map.Editor.tile = :{
+		texture = TileLayer(assert(loadstring("return "..text))()),
+		__texture = "TileLayer("..text..")",
+	}
+}
+
+// タイル属性変更
+def changeAttribute(attr, id, value){
+	if SDL.Map.Editor.tile and (SDL.Map.Editor.mode == 0 or SDL.Map.Editor.mode == 1) {
+		if value == nil { SDL.Map.Editor.tile[attr] = !SDL.Map.Editor.tile[attr] }
+		else { SDL.Map.Editor.tile[attr] = value }
+		
+		if id { // 指定IDのインナーHTMLもvalueの値に変更
+			win->getElementByID(id)->setInnerHTML(tostring(SDL.Map.Editor.tile[attr]))
+		}
+	}
+}
+
+// 属性を同じタイル全てに反映
+def reflectSameTiles() {
+	if SDL.Map.Editor.tile and SDL.Map.Editor.mode == 0 {
+		for i = 1, SDL.Map.Editor.xNum * SDL.Map.Editor.yNum {
+			local tile = SDL.Map.Editor.tiles[i]
+			if tile {
+				if tile.__texture and tile.__texture == SDL.Map.Editor.tile.__texture { tile.wall = SDL.Map.Editor.tile.wall }
+			}
+		}
+	}
+}
+
+SDL.App.routine[1] = def(){
+	SDL.Map->initialize()
+	while true {
+		if !playing { // 編集
+			SDL.Map.Editor->draw(SDL.Color(0,255,255))
+			
+			if SDL.getKey(SDL.KEY_Z) == 1 { SDL.Map.Editor.scale = SDL.Map.Editor.scale * 2 }
+			elif SDL.getKey(SDL.KEY_S) == 1 { SDL.Map.Editor.scale = SDL.Map.Editor.scale / 2 }
+			elif SDL.getKey(SDL.KEY_0) == 1 { SDL.Map.Editor.scale = 1 }
+		}else{ // プレイ
+			SDL.Map.Player->draw()
+		}
+		yield()
+	}
+}
+
+SDL.App.routine[2] = def(){
+	// 設定ウィンドウ作成
+	win = Win32.BrowserWindow(SDL.App.window->getNativeHandle(), "設定ウィンドウ",
+		10, 10, 480, 520)
+	win->show()
+	win->writeUI(ui)
+}
+
+SDL.App.routine[3] = def(){
+	local prevTile = SDL.Map.Editor.tile
+	// タイル属性監視
+	while true {
+		if SDL.Map.Editor.tile {
+			if SDL.Map.Editor.tile != prevTile {
+				prevTile = SDL.Map.Editor.tile
+				win->setValue("myinput", SDL.Map.Editor.tile.__texture->sub(11, -2))
+				win->getElementByID("tileID")->setInnerHTML(SDL.Map.Editor.tileID)
+				if SDL.Map.Editor.mode == 0 {
+					win->getElementByID("wallattr")->setInnerHTML(SDL.Map.Editor.tile.wall and "true" or "false")
+				}elif SDL.Map.Editor.mode == 1 {
+					win->getElementByID("wallattr")->setInnerHTML(SDL.Map.Editor.tile.wall and "true" or "false")
+					win->getElementByID("actionedit")->setInnerHTML(SDL.Map.Editor.tile.__action and SDL.Map.Editor.tile.__action or "")
+					win->getElementByID("chdir")->setInnerHTML(SDL.Map.Editor.tile.chdir and "true" or "false")
+					win->setValue("dx", SDL.Map.Editor.tile.dx and tostring(SDL.Map.Editor.tile.dx) or "")
+					win->setValue("dy", SDL.Map.Editor.tile.dy and tostring(SDL.Map.Editor.tile.dy) or "")
+					win->setValue("key", SDL.Map.Editor.tile.key and tostring(SDL.Map.Editor.tile.key) or "")
+					win->getElementByID("eventedit")->setInnerHTML(SDL.Map.Editor.tile.__event and SDL.Map.Editor.tile.__event or "")
+				}
+			}
+		}else{
+			if SDL.Map.Editor.tile != prevTile {
+				prevTile = nil
+				win->setValue("myinput", "")
+				win->getElementByID("tileID")->setInnerHTML"0"
+				if SDL.Map.Editor.mode == 0 {
+					win->getElementByID("wallattr")->setInnerHTML""
+				}elif SDL.Map.Editor.mode == 1 {
+					win->getElementByID("wallattr")->setInnerHTML""
+					win->getElementByID("actionedit")->setInnerHTML""
+					win->getElementByID("chdir")->setInnerHTML""
+					win->setValue("dx", "")
+					win->setValue("dy", "")
+					win->setValue("key", "")
+					win->getElementByID("eventedit")->setInnerHTML""
+				}
+			}
+		}
+		yield(10)
+	}
+}
+
+SDL.App->setup:{
+	title = "テキストRPGエディター"
+}
+
+SDL.App->execute()

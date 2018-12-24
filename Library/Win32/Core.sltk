@@ -1,0 +1,210 @@
+local user32 = ffi.load"user32.dll"
+ffi.cdef[[
+int EnumWindows(int __stdcall (*proc)(int hwnd, int lp), int lp);
+int EnumChildWindows(int hwnd, int __stdcall (*proc)(int hwnd, int lp), int lp);
+int IsIconic(int hwnd);
+int IsZoomed(int hwnd);
+int IsWindowVisible(int hwnd);
+int IsWindowEnabled(int hwnd);
+int GetDlgCtrlID(int hwnd);
+int GetWindowThreadProcessId(int hwnd, int *processID);
+int SendMessageW(int hwnd, int msg, int wp, int lp);
+int PostMessageW(int hwnd, int msg, int wp, int lp);
+int SetForegroundWindow(int hwnd);
+int SetTimer(int hwnd, int id, int interval, int __stdcall (*proc)(int hwnd, int msg, int id, int time));
+int KillTimer(int hwnd, int id);
+
+typedef struct{
+	int left, top, right, bottom;
+}RECT;
+int GetWindowRect(int hWnd, RECT *lpRect);
+
+int IsWindowVisible(int hwnd);
+]]
+
+/* アクティブなウィンドウハンドルを全て列挙 */
+def Sltk.Win32.enumerateWindows(proc){
+	if type(proc) == 'function' {
+		return user32.EnumWindows(proc, 0)
+	}else{
+		local handles, i = :{}, 1
+		user32.EnumWindows(def(hwnd){
+			handles[i] = hwnd
+			i = i + 1
+			return true
+		}, 0)
+		return handles
+	}
+}
+
+/* hwndで指定したハンドルのウィンドウの子ウィンドウハンドルを全て列挙 */
+def Sltk.Win32.enumerateChildWindows(hwnd, proc){
+	if type(proc) == 'function' {
+		return user32.EnumChildWindows(hwnd, proc, 0)
+	}else{
+		local handles, i = :{}, 1
+		user32.EnumChildWindows(hwnd, def(hwnd){
+			handles[i] = hwnd
+			i = i + 1
+			return true
+		}, 0)
+		return handles
+	}
+}
+
+/* hwndで指定したハンドルの状態取得 */
+def Sltk.Win32.isWindowIconic(hwnd){ // 最小化？
+	return 0 != user32.IsIconic(hwnd)
+}
+def Sltk.Win32.isWindowZoomed(hwnd){ // 最大化？
+	return 0 != user32.IsZoomed(hwnd)
+}
+def Sltk.Win32.isWindowVisible(hwnd){ // 表示？
+	return 0 != user32.IsWindowVisible(hwnd)
+}
+def Sltk.Win32.isWindowEnabled(hwnd){ // 有効？
+	return 0 != user32.IsWindowEnabled(hwnd)
+}
+
+/* hwndで指定したハンドルのコントロールのIDを取得 */
+def Sltk.Win32.getDialogControlID(hwnd){
+	return user32.GetDlgCtrlID(hwnd)
+}
+
+def Sltk.Win32.getWindowThreadProcessID(hwnd){
+	local procID = ffi.new"int[1]"
+	local thread = user32.GetWindowThreadProcessId(hwnd, procID)
+	return thread, procID[0]
+}
+
+/* Sltk.Win32.Processからhwnd配列取得 */
+// callback[=nil]: function(hwnd)->boolean
+def Sltk.Win32.getProcessWindowHandles(process, callback){
+	local procID, threadID = process->getProcessID(), process->getThreadID()
+	
+	if type(callback) == 'function' {
+		Sltk.Win32.enumerateWindows(def(hwnd){
+			local th, proc = Sltk.Win32.getWindowThreadProcessID(hwnd)
+			
+			if procID == proc and (threadID == 0 or threadID == th) and Sltk.Win32.isWindowVisible(hwnd) {
+				return callback(hwnd)
+			}
+			return true
+		})
+	}else{ // callback未指定の場合，全てのhwndを取得
+		local hwnds, i = :{}, 1
+		
+		Sltk.Win32.enumerateWindows(def(hwnd){
+			local th, proc = Sltk.Win32.getWindowThreadProcessID(hwnd)
+			
+			if procID == proc and (threadID == 0 or threadID == th) and Sltk.Win32.isWindowVisible(hwnd) {
+				hwnds[i] = hwnd
+				i = i + 1
+			}
+			return true
+		})
+		return hwnds
+	}
+}
+
+/* hwndで指定したハンドルのウィンドウの位置を取得 */
+def Sltk.Win32.getWindowPosition(hwnd){
+	local rect = ffi.new"RECT[1]"
+	local ret = user32.GetWindowRect(hwnd, rect)
+	return ret == 1, rect[0].left, rect[0].top, rect[0].right, rect[0].bottom
+}
+
+/* hwndで指定したハンドルのウィンドウの可視状態を取得 */
+def Sltk.Win32.isWindowVisible(hwnd){
+	return user32.IsWindowVisible(hwnd) != 0
+}
+
+/* hwndで指定したハンドルのウィンドウにメッセージを送信 */
+def Sltk.Win32.sendMessage(hwnd, msg, wp, lp){
+	return user32.SendMessageW(hwnd, msg, wp, lp)
+}
+
+def Sltk.Win32.postMessage(hwnd, msg, wp, lp){
+	return user32.PostMessageW(hwnd, msg, wp, lp)
+}
+
+/* hwndで指定したハンドルのウィンドウをアクティブにする */
+def Sltk.Win32.setForegroundWindow(hwnd){
+	return user32.SetForegroundWindow(hwnd)
+}
+
+/* hwndで指定したハンドルのウィンドウにタイマーをセットする */
+// タイマーIDがreturnされる．hwnd=0ならグローバルタイマー作成
+// id: タイマー識別用ID．hwnd=0なら無視される
+// interval: インターバルをミリ秒単位で指定
+// callback: function(int hwnd, int msg, int id, int time)->int（指定しない場合は，WM_TIMERイベントにて処理）
+def Sltk.Win32.setTimer(hwnd, id, interval, callback){
+	return user32.SetTimer(hwnd, id, interval, callback)
+}
+
+/* setTimerで作ったタイマーを削除する */
+def Sltk.Win32.killTimer(hwnd, id){
+	return 0 != user32.KillTimer(hwnd, id)
+}
+
+
+/*** ShellExecute ***/
+local shell = ffi.load"shell32.dll"
+ffi.cdef[[
+int ShellExecuteW(unsigned int hwnd, const wchar_t *lpVerb, const wchar_t *lpFile,
+	const wchar_t *lpParameters, const wchar_t *lpDirectory, int nShowMode);
+]]
+
+/* ShowMode */
+Sltk.Win32.SW_HIDE = 0
+Sltk.Win32.SW_SHOWNORMAL = 1
+Sltk.Win32.SW_SHOWMINIMIZED = 2
+Sltk.Win32.SW_SHOWMAXIMIZED = 3
+Sltk.Win32.SW_SHOWNOACTIVATE = 4
+Sltk.Win32.SW_SHOW = 5
+Sltk.Win32.SW_MINIMIZE = 6
+Sltk.Win32.SW_SHOWMINNOACTIVE = 7
+Sltk.Win32.SW_SHOWNA = 8
+Sltk.Win32.SW_RESTORE = 9
+Sltk.Win32.SW_SHOWDEFAULT = 10
+
+/*
+verb: 操作指定 "edit", "explore", "open", "print", "properties", "runas"
+file: 操作対象ファイルパス
+param: fileで実行可能ファイルを指定した場合、そのコマンドライン引数
+dir: 既定のディレクトリ
+showMode: アプリケーションの表示モード
+*/
+def Sltk.Win32.shellExecute(verb, file, param, dir, showMode, hwnd){
+	return shell.ShellExecuteW(
+		hwnd or 0, Sltk.Encoding.utf8ToWideString(verb),
+		Sltk.Encoding.utf8ToWideString(file),
+		param and Sltk.Encoding.utf8ToWideString(param) or nil,
+		dir and Sltk.Encoding.utf8ToWideString(dir) or nil,
+		showMode or Sltk.Win32.SW_SHOWNORMAL
+	)
+}
+
+
+local kernel = ffi.load"kernel32.dll"
+ffi.cdef[[
+long Beep(unsigned long freq, unsigned long time);
+]]
+
+/* Beep音再生 */
+// freq: 周波数[Hz]，time: 再生時間[msec]
+def Sltk.Win32.beep(freq, time){
+	return kernel.Beep(freq, time)
+}
+
+/* 簡易MML */
+// c, d, e, f, g, a, b: ド，レ，ミ，ファ，ソ，ラ，シ
+// 各音階の後ろに再生時間[msec]を記述（省略時は 200 msec）
+local s = :{c = 440, d = 494, e = 554, f = 587, g = 659, a = 740, b = 830}
+local p = lpeg.C(lpeg.R("ag")) * lpeg.C(lpeg.R("09")^0) * lpeg.Cp() / def(sound, time, fin){
+	Sltk.Win32.beep(s[sound], tonumber(time) or 200)
+	return fin, ""
+}
+def Sltk.Win32.playMML(mml){
+	return p->parse(mml)
+}

@@ -1,0 +1,126 @@
+namespace Sltk{
+	/*** ファイルパスライブラリ ***/
+	namespace Path{
+		// ファイル名を抽出
+		string getLeaf(const char *path);
+		// 拡張子を抜いたファイル名を抽出
+		string getStem(const char *path);
+		// 拡張子を抽出
+		string getExtension(const char *path);
+		
+		// ".."や"."などを上位，カレントディレクトリに変換したパスを取得
+		string convert(const char *path);
+		
+		// 同一パスかどうか判定
+		// len: -1以外を指定するとlenバイト分だけ比較する（-1なら全て比較）
+		bool isSame(const char *path1, const char *path2, u32 len=(u32)-1);
+		
+		// 親ディレクトリを取得
+		// real: trueなら実際の親ディレクトリ, falseなら一番後ろの'/'まで単なる文字列の切り出し
+		string getParent(const char *path, bool real=true);
+		
+		// ファイルorディレクトリか判定
+		bool isFile(const char *path);
+		bool isDirectory(const char *path);
+		
+		// フルパス取得
+		string complete(const char *path);
+		
+		// パスの末尾が'/'でないなら'/'を末尾に追加
+		string appendSlash(const char *path);
+		
+		// パスの末尾の'/'を削除
+		string removeSlash(string path);
+	}
+	
+	
+	/*** FileSystem 参照ディレクトリ設定 ***/
+	// File(Reader)::open時，ここで設定されたディレクトリも探索する
+	void setFileSystemDirectory(const char *dir);
+	string getFileSystemDirectory();
+	
+	
+	/* ===== Fileクラス(Pipe対応) ===== */
+	class File: public Object {
+	public:
+		File();
+		explicit File(const char *path, const char *mode="r");
+		explicit File(u32 pFile, u8 closeMode);
+		~File();
+		
+		// 通常のファイルハンドル作成
+		// modeの先頭に"p"を付けて指定するとPipeモードで開く: "pw", "pr+" など
+		bool open(const char *path, const char *mode="r");
+		// FILE*を直接渡す
+		// closeMode: 0=nothing, 1=fclose, 2=pclose
+		bool open(u32 pFile, u8 closeMode);
+		
+		void close();
+		
+		u32 getSize();
+		string readLine();
+		s8 readChar();
+		bool write(const char *text);
+		bool writeLine(const char *text);
+		bool writeChar(s8 c);
+		
+		/* 以下のread, writeは読み書きした数が返る */
+		u32 read(void *dest, u32 size, u32 n=1);
+		u32 write(const void *buf, u32 size, u32 n=1);
+		
+		// テキスト読み込み
+		string load(u32 size);
+		
+		bool seek(s32 move=0L, u8 from=SEEK_SET);
+		
+		// 現在のファイルポインタ位置
+		u32 getPosition();
+		
+		// バッファを明示的に書き込み
+		bool flush();
+	};
+	
+	
+	/* ファイル列挙クラス */
+	class FileEnumerator: public Object {
+	public:
+		FileEnumerator();
+		explicit FileEnumerator(const char *dir);
+		~FileEnumerator();
+		
+		bool open(const char *dir);
+		void close();
+		
+		// 次のファイルへ列挙を進める(falseが返ったら列挙終了)
+		// getState(this) == Object::FINISHED でも列挙終了検知可能
+		bool toNext();
+		
+		// ディレクトリ内ファイル名取得
+		string getName() const;
+		// "ディレクトリ名/ファイル名"取得
+		string getPath() const;
+	};
+	
+	
+	/* ファイル操作関連 */
+	bool readFile(const char *filename, Binary *dest);
+	string loadFile(const char *filename);
+	bool saveFile(const char *filename, const char *str, bool add=false);
+	u32 writeFile(const char *filename, const void *buf, u32 size, u32 n=1, bool add=false);
+	u32 getFileSize(const char *filename);
+	
+	// コピー先のファイルを上書きしたくない場合はoverwrite=falseにする
+	bool copyFile(const char *src, const char *dest, bool overwrite=true);
+	bool removeFile(const char *file);
+	
+	// ファイル・ディレクトリの移動(リネーム)
+	// destファイルが存在するとき、上書きしたくない場合はoverwrite=falseにする
+	bool moveFile(const char *src, const char *dest, bool overwrite=true);
+	
+	
+	/* ディレクトリ操作関連 */
+	bool createDirectory(const char *dir); // 複数階層のディレクトリ作成可能
+	bool copyDirectory(const char *src, const char *dest);
+	bool removeDirectory(const char *dir);
+	bool moveDirectory(const char *src, const char *dest);
+}

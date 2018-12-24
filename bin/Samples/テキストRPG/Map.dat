@@ -1,0 +1,165 @@
+:{['tiles']=:{[186]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[80]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[184]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[266]=:{['__texture']=[=[TileLayer(100,50,0)]=],['wall']=true},[75]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[182]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[183]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[74]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[181]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[185]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[14]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[226]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[20]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[40]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[206]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[79]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[60]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[54]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[286]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true},[246]=:{['__texture']=[=[TileLayer(100,50,0)]=],['wall']=true},[34]=:{['__texture']=[=[TileLayer(100,100,100)]=],['wall']=true}},['tileHeight']=32,['tileWidth']=32,['yNum']=15,['char']=:{['__texture']=[=[TileLayer("[font color=SDL.Color(255,0,0)]▼")]=],['x']=3,['y']=14},['events']=:{[44]=:{['x']=4,['wall']=true,['y']=3,['event']=:{[1]=:{['cond']=[=[!SDL.Map.Player.events[17]]=],['label']=[=[AWARD]=],['type']=[=[jump]=]},[2]=:{['type']=[=[adv]=],['body']=[=[旅人
+「魔王を倒すには伝説の剣が必要だぜ？」[l]
+]=]},[3]=:{['label']=[=[END]=],['type']=[=[jump]=]},[4]=:{['label']=[=[AWARD]=]},[5]=:{['type']=[=[adv]=],['body']=[=[旅人
+「まさか魔王を倒しちまうとはな……[l]
+　やるな！」[l]
+]=]},[6]=:{['label']=[=[END]=]},[7]=:{}},['__event']=[=[jump cond="!SDL.Map.Player.events[17]", label="AWARD"
+
+旅人
+「魔王を倒すには伝説の剣が必要だぜ？」[l]
+;jump label="END"
+
+*AWARD
+旅人
+「まさか魔王を倒しちまうとはな……[l]
+　やるな！」[l]
+
+*END]=],['__action']=[=[local r=Randomizer()
+while true {
+ SDL.Map.move(SDL.Map.Player, @, r->get(4))
+ yield(60)
+}]=],['chdir']=true,['dy']=1,['dx']=1,['__texture']=[=[TileLayer("人")]=],['key']=[=[OK]=]},[17]=:{['x']=17,['wall']=true,['y']=1,['event']=:{[1]=:{['type']=[=[adv]=],['body']=[=[魔王
+「人間よ，我に何の用だ？」[s]
+]=]},[2]=:{[1]=[=[お前を倒す！]=],[2]=[=[なんでもありません]=],[3]=[=[魔王の倒し方を教えて？]=],['type']=[=[select]=]},[3]=:{[1]=[=[BATTLE]=],[2]=[=[ESCAPE]=],[3]=[=[ANGRY]=],['type']=[=[jump]=]},[4]=:{['label']=[=[BATTLE]=]},[5]=:{['type']=[=[adv]=],['body']=[=[魔王
+「か弱き人間風情が我に挑むというのか」[l]
+]=]},[6]=:{['type']=[=[adv]=],['body']=[=[魔王
+「面白い！かかって来い！！」[l]
+]=]},[7]=:{['cond']=[=[SWORD]=],['label']=[=[VICTORY]=],['type']=[=[jump]=]},[8]=:{['type']=[=[adv]=],['body']=[=[勇者は素手で殴りかかった[l]
+]=]},[9]=:{['type']=[=[adv]=],['body']=[=[しかし返り討ちにされてしまった[l]
+]=]},[10]=:{['type']=[=[adv]=],['body']=[=[魔王
+「ふん……雑魚め」[l]
+]=]},[11]=:{['label']=[=[GAMEOVER]=],['type']=[=[jump]=]},[12]=:{['label']=[=[VICTORY]=]},[13]=:{['type']=[=[adv]=],['body']=[=[勇者は伝説の剣を取り出し，魔王に斬りかかった[l]
+]=]},[14]=:{['type']=[=[adv]=],['body']=[=[ズバッ！[l]
+魔王がまるで豆腐のように斬れた[l]
+]=]},[15]=:{['type']=[=[adv]=],['body']=[=[魔王
+「ば，バカな……」[l]
+]=]},[16]=:{['type']=[=[routine]=],['exp']=[=[SDL.Map.Player.events[17] = nil]=]},[17]=:{['type']=[=[adv]=],['body']=[=[魔王を倒した[l]
+]=]},[18]=:{['label']=[=[END]=],['type']=[=[jump]=]},[19]=:{['label']=[=[ESCAPE]=]},[20]=:{['type']=[=[routine]=],['exp']=[=[ANGRY=(ANGRY or 0)+1]=]},[21]=:{['cond']=[=[ANGRY==3]=],['label']=[=[ANGRY]=],['type']=[=[jump]=]},[22]=:{['type']=[=[adv]=],['body']=[=[魔王
+「ふん」[l]
+]=]},[23]=:{['label']=[=[END]=],['type']=[=[jump]=]},[24]=:{['label']=[=[ANGRY]=]},[25]=:{['type']=[=[routine]=],['exp']=[=[ANGRY=0]=]},[26]=:{['type']=[=[adv]=],['body']=[=[魔王
+「ふざけるな！」[l]
+]=]},[27]=:{['type']=[=[adv]=],['body']=[=[魔王は激昂した！[l]
+勇者はボロ雑巾のようにやられてしまった……[l]
+]=]},[28]=:{['label']=[=[GAMEOVER]=]},[29]=:{['type']=[=[adv]=],['body']=[=[どうする？[s]
+]=]},[30]=:{[1]=[=[最初から始める]=],[2]=[=[ゲームを終了する]=],['type']=[=[select]=]},[31]=:{[1]=[=[RESTART]=],[2]=[=[QUIT]=],['type']=[=[jump]=]},[32]=:{['label']=[=[QUIT]=]},[33]=:{['type']=[=[routine]=],['exp']=[=[SDL.App->quit()]=]},[34]=:{['label']=[=[RESTART]=]},[35]=:{['type']=[=[routine]=],['exp']=[=[SDL.Map.Player->load(SDL.Map.Editor)]=]},[36]=:{['label']=[=[END]=]},[37]=:{['type']=[=[adv]=],['body']=[=[ 
+]=]}},['chdir']=true,['__event']=[=[魔王
+「人間よ，我に何の用だ？」[s]
+;select "お前を倒す！", "なんでもありません", "魔王の倒し方を教えて？"
+;jump "BATTLE", "ESCAPE", "ANGRY"
+
+*BATTLE
+魔王
+「か弱き人間風情が我に挑むというのか」[l]
+;魔王
+「面白い！かかって来い！！」[l]
+;jump cond="SWORD", label="VICTORY"
+;勇者は素手で殴りかかった[l]
+;しかし返り討ちにされてしまった[l]
+;魔王
+「ふん……雑魚め」[l]
+;jump label="GAMEOVER"
+
+*VICTORY
+勇者は伝説の剣を取り出し，魔王に斬りかかった[l]
+;ズバッ！[l]
+魔王がまるで豆腐のように斬れた[l]
+;魔王
+「ば，バカな……」[l]
+;routine exp="SDL.Map.Player.events[17] = nil"
+;魔王を倒した[l]
+;jump label="END"
+
+*ESCAPE
+routine exp="ANGRY=(ANGRY or 0)+1"
+;jump cond="ANGRY==3", label="ANGRY"
+;魔王
+「ふん」[l]
+;jump label="END"
+
+*ANGRY
+routine exp="ANGRY=0"
+;魔王
+「ふざけるな！」[l]
+;魔王は激昂した！[l]
+勇者はボロ雑巾のようにやられてしまった……[l]
+
+*GAMEOVER
+どうする？[s]
+;select "最初から始める", "ゲームを終了する"
+;jump "RESTART", "QUIT"
+
+*QUIT
+routine exp="SDL.App->quit()"
+
+*RESTART
+routine exp="SDL.Map.Player->load(SDL.Map.Editor)"
+
+*END
+ ]=],['dx']=1,['__texture']=[=[TileLayer("[font color=SDL.Color(255,0,255)]魔")]=],['key']=[=[OK]=],['dy']=1},[278]=:{['x']=18,['wall']=true,['y']=14,['event']=:{[1]=:{['type']=[=[adv]=],['body']=[=[宝箱を開けた[l]
+中からやたら強そうな剣が出てきた[l]
+]=]},[2]=:{['type']=[=[routine]=],['exp']=[=[SWORD=true]=]},[3]=:{['type']=[=[adv]=],['body']=[=[伝説の剣を手に入れた！[l]
+]=]},[4]=:{['type']=[=[routine]=],['exp']=[=[SDL.Map.Player.events[278]=nil]=]}},['chdir']=true,['__event']=[=[宝箱を開けた[l]
+中からやたら強そうな剣が出てきた[l]
+;routine exp="SWORD=true"
+;伝説の剣を手に入れた！[l]
+;routine exp="SDL.Map.Player.events[278]=nil"]=],['dx']=1,['__texture']=[=[TileLayer("[font color=SDL.Color(255,200,0)]宝")]=],['key']=[=[OK]=],['dy']=1},[223]=:{['x']=3,['wall']=true,['y']=12,['event']=:{[1]=:{['cond']=[=[!SDL.Map.Player.events[17]]=],['label']=[=[AWARD]=],['type']=[=[jump]=]},[2]=:{['cond']=[=[!SDL.Map.Player.tiles[246]]=],['label']=[=[TEMPLATE]=],['type']=[=[jump]=]},[3]=:{['label']=[=[INIT]=],['type']=[=[jump]=]},[4]=:{['label']=[=[AWARD]=]},[5]=:{['type']=[=[adv]=],['body']=[=[姫
+「魔王を倒してくださったのですね！[l]
+　ありがとうございます❤」[l]
+]=]},[6]=:{['label']=[=[END]=],['type']=[=[jump]=]},[7]=:{['label']=[=[INIT]=]},[8]=:{['type']=[=[routine]=],['exp']=[=[SWORD=nil]=]},[9]=:{['type']=[=[adv]=],['body']=[=[姫
+「勇者様，あなたにお願いがあります」[l]
+]=]},[10]=:{['type']=[=[adv]=],['body']=[=[姫
+「魔王を倒していただきたいのです」[l]
+]=]},[11]=:{['label']=[=[START]=]},[12]=:{['type']=[=[adv]=],['body']=[=[どうする？[s]
+]=]},[13]=:{[1]=[=[魔王を倒す]=],[2]=[=[魔王を倒さない]=],['type']=[=[select]=]},[14]=:{[1]=[=[ADVENTURE]=],[2]=[=[LOOP]=],['type']=[=[jump]=]},[15]=:{['label']=[=[LOOP]=]},[16]=:{['type']=[=[adv]=],['body']=[=[姫
+「えぇ！？そんなぁ……」[l]
+]=]},[17]=:{['type']=[=[adv]=],['body']=[=[姫は泣きそうだ[l]
+]=]},[18]=:{['label']=[=[START]=],['type']=[=[jump]=]},[19]=:{['label']=[=[ADVENTURE]=]},[20]=:{['type']=[=[adv]=],['body']=[=[姫
+「ありがとうございます！」[l]
+]=]},[21]=:{['type']=[=[adv]=],['body']=[=[姫
+「魔王は北東の城にいます」[l]
+]=]},[22]=:{['label']=[=[TEMPLATE]=]},[23]=:{['type']=[=[adv]=],['body']=[=[姫
+「どうか，この世界に平和を取り戻してください！」[l]
+]=]},[24]=:{['type']=[=[routine]=],['body']=[=[SDL.Map.Player.tiles[246] = nil
+SDL.Map.Player.tiles[266] = nil
+]=]},[25]=:{['label']=[=[END]=]},[26]=:{}},['chdir']=true,['__event']=[=[jump cond="!SDL.Map.Player.events[17]", label="AWARD"
+;jump cond="!SDL.Map.Player.tiles[246]", label="TEMPLATE"
+;jump label="INIT"
+
+*AWARD
+姫
+「魔王を倒してくださったのですね！[l]
+　ありがとうございます❤」[l]
+;jump label="END"
+
+*INIT
+routine exp="SWORD=nil"
+;姫
+「勇者様，あなたにお願いがあります」[l]
+;姫
+「魔王を倒していただきたいのです」[l]
+
+*START
+どうする？[s]
+;select "魔王を倒す","魔王を倒さない"
+;jump "ADVENTURE", "LOOP"
+
+*LOOP
+姫
+「えぇ！？そんなぁ……」[l]
+;姫は泣きそうだ[l]
+;jump label="START"
+
+*ADVENTURE
+姫
+「ありがとうございます！」[l]
+;姫
+「魔王は北東の城にいます」[l]
+
+*TEMPLATE
+;姫
+「どうか，この世界に平和を取り戻してください！」[l]
+;routine
+SDL.Map.Player.tiles[246] = nil
+SDL.Map.Player.tiles[266] = nil
+
+*END]=],['dx']=1,['__texture']=[=[TileLayer("[font color=SDL.Color(255,100,100)]姫")]=],['key']=[=[OK]=],['dy']=1}},['xNum']=20}

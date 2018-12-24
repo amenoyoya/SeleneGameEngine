@@ -1,0 +1,221 @@
+require "Game/Core"
+
+local DRAW_POSITION = 160
+local FIELD_WIDTH, FIELD_HEIGHT = 16, 23
+
+def rotatetable(t, w, h){ // 2次元配列を右に1つ回転
+	local ret = :{}
+	for y = 1, h {
+		for x = 1, w {
+			if !ret[x] { ret[x] = :{} }
+			ret[x][y] = t[h-y+1][x]
+		}
+	}
+	return ret
+}
+
+/*** ブロックデータ ***/
+local blocks = :{
+	:{:{1,1},:{1,1}},
+	:{:{2,2},:{0,2},:{0,2}},
+	:{:{3,3},:{3,0},:{3,0}},
+	:{:{0,4},:{4,4},:{4,0}},
+	:{:{5,0},:{5,5},:{0,5}},
+	:{:{6,0},:{6,6},:{6,0}},
+	:{:{7},:{7},:{7},:{7}},
+	rnd = Randomizer(),
+}
+
+def blocks->rotate(block, n){ // 指定ブロックをn回右回転したブロックを返す
+	for i = 1, n {
+		block = rotatetable(block, block.width, block.height)
+		block.width, block.height = #block[1], #block
+	}
+	return block
+}
+
+
+/*** フィールドデータ ***/
+// フィールドに負数が設定されている場合，そこは壁（固定化したブロック）
+// フィールドに負数が設定されている場合，そこは移動中のブロック
+// フィールドの色は colors[math.abs(field[y][x])] で取得可能
+local colors = :{
+	SDL.Color(255,0,0), SDL.Color(0,255,0), SDL.Color(0,0,255),
+	SDL.Color(200,200,0), SDL.Color(200,0,200), SDL.Color(0,200,200),
+	SDL.Color(200,100,0), SDL.Color(255,255,255), SDL.Color(0,0,0),
+}
+local field = :{ count = 0, lose = false }
+
+def field->initialize(){ // フィールド初期化
+	for y = 1, FIELD_HEIGHT-2 {
+		field[y] = :{}
+		field[y][1], field[y][2], field[y][3] = -9, -9, -9
+		field[y][FIELD_WIDTH], field[y][FIELD_WIDTH-1], field[y][FIELD_WIDTH-2] = -9, -9, -9
+		for x = 4, FIELD_WIDTH-3 { field[y][x] = 0 }
+	}
+	for y = FIELD_HEIGHT-1, FIELD_HEIGHT {
+		field[y] = :{}
+		for x = 1, FIELD_WIDTH { field[y][x] = -9 }
+	}
+	@->enterblock()
+}
+
+def field->enterblock(){ // ブロックを登録
+	local kind = blocks.rnd->get(1, 7)
+	local block = blocks[kind]
+	
+	@.block = table.getclone(block)
+	@.block.kind, @.block.x, @.block.y = kind, 7, 0
+	@.block.width, @.block.height = #block[1], #block
+	for y = 1, @.block.height {
+		for x = 1, @.block.width {
+			if @[y+@.block.y][x+@.block.x] != 0 { return false }
+			@[y+@.block.y][x+@.block.x] = block[y][x]
+		}
+	}
+	return true
+}
+
+def field->clearlines(){ // ブロックが揃った行を消す（消した行のインデックスと残る行のインデックスが返る）
+	local info = :{
+		clearlines = :{}, clearlines_n = 0,
+		remainlines = :{}, remainlines_n = 0,
+	}
+	for y = FIELD_HEIGHT-2, 1, -1 {
+		local freeze = 0 // 固定化ブロックの数
+		
+		for x = 4, FIELD_WIDTH-3 {
+			if @[y][x] < 0 { freeze = freeze + 1 }
+		}
+		if freeze == 0 { break }
+		elif freeze == FIELD_WIDTH-6 { // 揃った行を消す
+			info.clearlines_n = info.clearlines_n + 1
+			info.clearlines[info.clearlines_n] = y
+			for x = 4, FIELD_WIDTH-3 { @[y][x] = 0 }
+		}else{ // 残る行のインデックスを保存しておく
+			info.remainlines_n = info.remainlines_n + 1
+			info.remainlines[info.remainlines_n] = y
+		}
+	}
+	return info
+}
+
+def field->packlines(info){ // 消された行の分だけブロックを詰める
+	local y = FIELD_HEIGHT-2
+	
+	for i = 1, info.remainlines_n {
+		local remainline = info.remainlines[i]
+		
+		for x = 4, FIELD_WIDTH-3 {
+			@[y][x], @[remainline][x] = @[remainline][x], 0
+		}
+		y = y - 1
+	}
+}
+
+def field->moveblock(mx, my, rota){ // ブロックを指定方向に移動・回転
+	rota = rota or 0
+	// 元居たフィールドをクリア
+	for y = 1, @.block.height {
+		for x = 1, @.block.width {
+			if @[@.block.y+y][@.block.x+x] > 0 { // 負数は壁（固定化ブロック）
+				@[@.block.y+y][@.block.x+x] = 0 // 移動中ブロック部分のみクリア
+			}
+		}
+	}
+	// 移動・回転可能か判定
+	local block = blocks->rotate(@.block, rota)
+	for y = 1, block.height {
+		for x = 1, block.width {
+			if @[@.block.y+y+my][@.block.x+x+mx] < 0 and block[y][x] > 0 {
+				mx, my, rota = 0, 0, 0 // 移動・回転不可能なら移動・回転=0に設定
+				break
+			}
+		}
+	}
+	// ブロックを確定
+	block = blocks->rotate(@.block, rota)
+	block.kind, block.x, block.y = @.block.kind, @.block.x + mx, @.block.y + my
+	@.block = block
+	for y = 1, @.block.height {
+		for x = 1, @.block.width {
+			// ここは足し算にしないと固定化ブロック部分が0で上書きされてしまう可能性がある
+			@[@.block.y+y][@.block.x+x] = @[@.block.y+y][@.block.x+x] + @.block[y][x]
+		}
+	}
+	return mx != 0 or my != 0 or rota != 0
+}
+
+def field->fallblock(){ // ブロックを落とす
+	if !@->moveblock(0, 1) { // 底に着いたらブロックを固定化し，新規ブロックを登録
+		for y = 1, @.block.height {
+			for x = 1, @.block.width {
+				if @[@.block.y+y][@.block.x+x] > 0 {
+					@[@.block.y+y][@.block.x+x] = -@[@.block.y+y][@.block.x+x] // 負数にすることでブロック固定化
+				}
+			}
+		}
+		local info = @->clearlines() // 行消し
+		if info.clearlines_n > 0 { @->packlines(info) }// 行を消したらブロックを詰める
+		// 新規ブロックを登録
+		if !@->enterblock() { // ブロックが登録できなければゲームオーバー
+			@.lose = SDL.TextLayer("[style align='center'][font size=42, color=SDL.Color(255,0,100)]GAME OVER\n"
+				.."[font size=24, color=SDL.Color(0,255,255)]再挑戦するなら決定キー")
+		}
+	}
+}
+
+def field->draw(){ // フィールド描画
+	for y = 1, FIELD_HEIGHT {
+		for x = 1, FIELD_WIDTH {
+			if @[y][x] != 0 {
+				SDL.fillRectangle(DRAW_POSITION+(x-1)*20+1, (y-1)*20+1, 18, 18,
+					@.lose and colors[@[y][x] == -9 and 9 or 1] or colors[math.abs(@[y][x])])
+			}
+		}
+	}
+	if @.lose {
+		@.lose->drawCenter(SDL.App.settings.width/2, SDL.App.settings.height/2)
+		if SDL.getKey"OK" == 1 { // 決定キーでゲームルーチンを初期化
+			@.lose = false
+			SDL.App.routine[1] = 0
+		}
+	}
+}
+
+def field->update(){ // フィールド更新
+	if !@.lose {
+		@.count = @.count + 1
+		if @.count % 20 == 0 { @->fallblock() }
+		
+		if SDL.getKey"LEFT" % 2 == 1 { @->moveblock(-1, 0) }
+		if SDL.getKey"RIGHT" % 2 == 1 { @->moveblock(1, 0) }
+		if SDL.getKey"DOWN" % 2 == 1 { @->fallblock() }
+		if SDL.getKey"UP" % 2 == 1 { @->moveblock(0, 0, 1) } // 右回転
+		if SDL.getKey"OK" % 2 == 1 { @->moveblock(0, 0, 3) } // 左回転
+	}
+}
+
+SDL.App.routine[1] = def(){
+	SDL.App.window.keyRepeatTime = 200 // キーリピートタイムを0.2秒に
+	field->initialize()
+	while true {
+		field->draw()
+		field->update()
+		yield()
+	}
+}
+
+SDL.App.routine[100] = def(@){
+	while true {
+		SDL.drawText(0, 0, "FPS:"..SDL.App.fpsManager->getFPS(), SDL.Color(255,0,0))
+		yield()
+	}
+}
+
+SDL.App->setup:{
+	title = "テトリス", background = SDL.Color(255,255,255),
+	icon = "icon.png",
+}
+
+SDL.App->execute()

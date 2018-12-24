@@ -1,0 +1,53 @@
+require "Game"
+require "OpenGL"
+
+SDL.App.routine[1] = def(){
+	// setup viewport
+	glEnable(GL_DEPTH_TEST)
+	// setup projection matrix
+	glMatrixMode(GL_PROJECTION)
+	glLoadIdentity()
+	gluPerspective(45.0, SDL.App.settings.width / SDL.App.settings.height, 2.0, 200.0)
+	// setup light
+	local position = :{-10.0, 10.0, 10.0, 1.0}
+	local ambient = :{ 1.0, 1.0, 1.0, 1.0}
+	local diffuse = :{ 1.0, 1.0, 1.0, 1.0}
+	local specular = :{ 0.0, 0.0, 0.0, 0.0}
+	glLightfv(GL_LIGHT0, GL_POSITION, position)
+	glLightfv(GL_LIGHT0, GL_AMBIENT, ambient)
+	glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse)
+	glLightfv(GL_LIGHT0, GL_SPECULAR, specular)
+	glLightModelf(GL_LIGHT_MODEL_LOCAL_VIEWER, 1)
+	glEnable(GL_LIGHTING)
+	glEnable(GL_LIGHT0)
+	
+	while true {
+		// setup view
+		glMatrixMode(GL_MODELVIEW)
+		glLoadIdentity()
+		gluLookAt(0.0, 0.0, -30.0,
+			0.0, 0.0, 0.0,
+			0.0, -1.0, 0.0)
+		
+		// setup material
+		local ambient   = :{ 0.1, 0.1, 0.1, 1.0}
+		local diffuse   = :{ 1.0, 0.0, 0.0, 1.0}
+		local specular  = :{ 1.0, 1.0, 1.0, 1.0}
+		local shininess = :{ 0.0}
+		glMaterialfv(GL_FRONT, GL_AMBIENT, ambient)
+		glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuse)
+		glMaterialfv(GL_FRONT, GL_SPECULAR, specular)
+		glMaterialfv(GL_FRONT, GL_SHININESS, shininess)
+		
+		// draw sphere
+		local quadric = gluNewQuadric()
+		gluSphere(quadric, 10.0, 30, 30)
+		yield()
+	}
+}
+
+SDL.App->setup:{
+	background = SDL.Color(0,0,55)
+}
+
+SDL.App->execute()

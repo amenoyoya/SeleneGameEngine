@@ -1,0 +1,17 @@
+local gl = ffi.load"opengl32.dll"
+
+ffi.cdef[[
+void glEnable(int cap);
+void glMatrixMode(int mode);
+void glLoadIdentity();
+void glLightfv(int light, int pname, float params[]);
+void glLightModelf(int pname, float param);
+void glMaterialfv(int face, int pname, float params[]);
+]]
+
+def glEnable(cap){ gl.glEnable(cap) }
+def glMatrixMode(mode){ gl.glMatrixMode(mode) }
+def glLoadIdentity(){ gl.glLoadIdentity() }
+def glLightfv(light, pname, params){ gl.glLightfv(light, pname, ffi.new("float["..#params.."]", params)) }
+def glLightModelf(pname, param){ gl.glLightModelf(pname, param) }
+def glMaterialfv(face, pname, params){ gl.glMaterialfv(face, pname, ffi.new("float["..#params.."]", params)) }

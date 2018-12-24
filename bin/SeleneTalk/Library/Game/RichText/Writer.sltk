@@ -1,0 +1,99 @@
+/*** 描画スタイル，フォントスタイル管理クラス ***/
+local def drawChar(@, x, y, alpha){ // x, y: 位置を本来の位置からずらす場合指定
+	if @.texture {
+		x, y, alpha = x or 0, y or 0, alpha or @.color.alpha
+		if !@.rubyOffset { // ルビはエッジや影を描かない
+			if @.drawMode.shadow {
+				// 影描画
+				@.texture->setColor(@.shadowColor.red, @.shadowColor.green, @.shadowColor.blue)
+				@.texture->setAlpha(alpha)
+				@.texture->draw(x+@.x+2, y+@.y+2, @.width, @.height, @.srcX, @.srcY, @.srcWidth, @.srcHeight)
+			}
+			if @.drawMode.edge {
+				// エッジ描画(アルファ値は文字描画部と同一にする)
+				@.texture->setColor(@.edgeColor.red, @.edgeColor.green, @.edgeColor.blue)
+				@.texture->setAlpha(alpha)
+				@.texture->draw(x+@.x-1, y+@.y-1, @.width, @.height, @.srcX, @.srcY, @.srcWidth, @.srcHeight)
+				@.texture->draw(x+@.x+1, y+@.y-1, @.width, @.height, @.srcX, @.srcY, @.srcWidth, @.srcHeight)
+				@.texture->draw(x+@.x-1, y+@.y+1, @.width, @.height, @.srcX, @.srcY, @.srcWidth, @.srcHeight)
+				@.texture->draw(x+@.x+1, y+@.y+1, @.width, @.height, @.srcX, @.srcY, @.srcWidth, @.srcHeight)
+			}
+		}
+		// 本体描画
+		@.texture->setColor(@.color.red, @.color.green, @.color.blue)
+		@.texture->setAlpha(alpha)
+		@.texture->draw(x+@.x, y+@.y, @.width, @.height, @.srcX, @.srcY, @.srcWidth, @.srcHeight)
+	}
+}
+
+local def drawGraph(@, x, y, alpha){ // アイコン描画用
+	if @.texture {
+		x, y, alpha = x or 0, y or 0, alpha or @.color.alpha
+		@.texture->setAlpha(alpha)
+		@.texture->draw(x+@.x, y+@.y, @.width, @.height, @.srcX, @.srcY, @.srcWidth, @.srcHeight)
+	}
+}
+
+SDL.RichTextWriter = class:{
+	constructor = def(@, style){
+		@.font, @.rubyFont = SDL.Font(), SDL.Font()
+		@.drawMode = :{ edge = true, shadow = false }
+		@->setDrawStyle(style or :{})
+		@->setFontStyle(style or :{})
+	},
+	
+	/* 描画スタイル変更 */
+	// 設定項目:	.edge .shadow: 縁，影描画 true/false
+	// 				.color .edgeColor .shadowColor: フォント色
+	// 				.rubyOffset .pitch: ルビ，字間オフセット
+	setDrawStyle = def(@, info){
+		if info.edge != nil { @.drawMode.edge = info.edge }
+		if info.shadow != nil { @.drawMode.shadow = info.shadow }
+		@.color = info.color or @.color or SDL.Color(250,250,250)
+		@.edgeColor = info.edgeColor or @.edgeColor or SDL.Color(50,50,50)
+		@.shadowColor = info.shadowColor or @.shadowColor or SDL.Color(50,50,50)
+		@.rubyOffset = info.rubyOffset or @.rubyOffset or 0 // ルビと本文間のオフセット
+		@.pitch = info.pitch or @.pitch or 0 // 字間オフセット
+	},
+	
+	/* フォントスタイル変更 */
+	// 設定項目:	.name: フォント名
+	// 				.size .rubySize: フォントサイズ
+	// 				.bold .underLine .italic .strikeThrough: 各種装飾 true/false
+	setFontStyle = def(@, font){
+		local name, size, rubysize = @.fontName, @.fontSize, @.rubySize
+		
+		@.fontName = font.name or @.fontName or SDL.App.settings.fontName
+		@.fontSize = font.size or @.fontSize or 16
+		@.rubySize = font.rubySize or @.rubySize or 11
+		if @.fontName != name or @.fontSize != size {
+			if !@.font->open(@.fontName, @.fontSize) {
+				error("[RichTextWriter]failed to create font '"..@.fontName..", "..@.fontSize.."'")
+			}
+		}
+		if @.fontName != name or @.rubySize != rubySize {
+			if !@.rubyFont->open(@.fontName, @.rubySize) {
+				error("[RichTextWriter]failed to create font '"..@.fontName..", "..@.rubySize.."'")
+			}
+		}
+		@.bold = font.bold == nil and @.bold or font.bold
+		@.underLine = font.underLine == nil and @.underLine or font.underLine
+		@.italic = font.italic == nil and @.italic or font.italic
+		@.strikeThrough = font.strikeThrough == nil and @.strikeThrough or font.strikeThrough
+		@.font->setStyle((@.bold and SDL.FONT_BOLD or 0) | (@.underLine and SDL.FONT_UNDERLINE or 0)
+			| (@.italic and SDL.FONT_ITALIC or 0) | (@.strikeThrough and SDL.FONT_STRIKETHROUGH or 0))
+		@.rubyFont->setStyle((@.bold and SDL.FONT_BOLD or 0) | (@.italic and SDL.FONT_ITALIC or 0))
+	},
+	
+	/* 飾り付き文字生成 */
+	generate = def(@, param){
+		local obj = :{ // paramにgraph属性があるならアイコン用の描画関数を設定
+			draw = param.graph and drawGraph or drawChar, drawMode = @.drawMode,
+			color = @.color, edgeColor = @.edgeColor, shadowColor = @.shadowColor,
+			pitch = @.pitch, x = 0, y = 0, width = 0, height = 0,
+			srcX = 0, srcY = 0, srcWidth = -1, srcHeight = -1,
+		}
+		table.copy(param, obj)
+		return obj
+	},
+}

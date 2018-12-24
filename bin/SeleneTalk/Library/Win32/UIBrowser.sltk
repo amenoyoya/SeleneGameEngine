@@ -1,0 +1,111 @@
+/*** BrowserWindow拡張 ***/
+
+require "BrowserWindow"
+
+/* UI作成用スクリプトテーブル */
+local UIScripter = :{}
+
+// 文法を生成
+// browser: BrowserExクラスオブジェクト
+// return: UI作成スクリプトパーサー（parser->parse(script)でスクリプト実行）
+def UIScripter.compile(browser){
+	return lpeg.Bp("<!--", "-->") / 0 // コメントは無視
+	+ ("@"*lpeg.C(lpeg.R("az")^1)*lpeg.space^0*lpeg.C(lpeg.Bp("{", "}") / 0)*lpeg.Cp() / def(ctrl, conf, fin){
+		local attributes, repl, func = ''
+		
+		conf = assert(loadstring("return :"..conf))()
+		conf.id = conf.id or tostring(conf)->match"0x%x+"
+		func = UIScripter['config_'..ctrl]
+		if func { func(browser, conf) }
+		for attr, val in pairs(conf) {
+			if attr != 'html' and type(val) == 'string' {
+				attributes = attributes..' '..attr..'="'..val..'"'
+			}
+		}
+		func = UIScripter['create_'..ctrl]
+		if func { repl = func(browser, conf, attributes) }
+		return fin, repl
+	})
+}
+
+/* UIコントロール作成 */
+// ボタン
+def UIScripter.config_button(browser, conf){
+	if conf.onclick {
+		browser.procedures[conf.id] = conf.onclick
+		conf.onclick = "location.href='about:sltk:"..conf.id.."'"
+	}
+}
+def UIScripter.create_button(browser, conf, attr){
+	return "<button"..attr..">"..(conf.html or "").."</button>"
+}
+
+// インプットボックス
+def UIScripter.create_input(browser, conf, attr){
+	return "<input"..attr.." />"
+}
+
+// テキストエリア
+def UIScripter.create_textarea(browser, conf, attr){
+	return "<textarea"..attr..">"..(conf.html or "").."</textarea>"
+}
+
+// コンボボックス
+def UIScripter.create_select(browser, conf, attr){
+	local html = "<select"..attr..">"
+	if conf.options {
+		for i = 1, #conf.options {
+			html = html.."<option value=\""..conf.options[i][1].."\">"..conf.options[i][2].."</option>"
+		}
+	}
+	return html.."</select>"
+}
+
+
+/*** UI作成BrowserEx拡張 ***/
+local def writeUI(@, script){ /* UI作成スクリプトによりHTML生成 */
+	return @->writeTemplateHTML(false, "", @.parser->parse(script))
+}
+
+local def getValue(@, id){ /* 指定IDの要素のvalueを取得 */
+	local val = @->getElementByID(id)->getAttribute("value")
+	if val.vType == Win32.VT_INTEGER { return val.intVal }
+	elif val.vType == Win32.VT_NUMBER { return val.numVal }
+	elif val.vType == Win32.VT_STRING { return val.strVal }
+	else { return "" }
+}
+
+local def setValue(@, id, value){ /* 指定IDの要素のvalueを設定 */
+	return @->getElementByID(id)->setAttribute("value",
+		Sltk.Win32.Variant(Sltk.Win32.VT_STRING, tostring(value)))
+}
+
+local constructor = Sltk.Win32.BrowserEx.constructor
+
+def Sltk.Win32.BrowserEx->constructor(parent, title, x, y, w, h, style, exstyle){
+	constructor(@, parent, title, x, y, w, h, style, exstyle)
+	
+	@.procedures = :{} // Javascript <-> SeleneTalk 通信用
+	@.parser = UIScripter.compile(@) // UI作成スクリプト
+	@.writeUI = writeUI
+	@.getValue = getValue
+	@.setValue = setValue
+	
+	def @->onBeforeNavigate(url){ // Javascript <-> SeleneTalk 通信用
+		if url->sub(1, 11) == "about:sltk:" {
+			local proc = @.procedures[url->sub(12)]
+			if proc {
+				xpcall(def(){ proc(@) }, def(msg){
+					Sltk.Win32.showMessageBox(msg, "Error in Sltk.Win32.UIBrowser", Sltk.Win32.MB_ICONWARNING)
+				})
+			}
+			return false
+		}
+		return true
+	}
+}
+
+
+// UIScripterに他のUIコントロールを追加する場合
+// require("UIBrowser")が返すテーブルに作成メソッドを追加すれば良い
+return UIScripter

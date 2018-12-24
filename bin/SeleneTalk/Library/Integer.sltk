@@ -1,0 +1,67 @@
+local itype = :{[1] = "int8_t", [2] = "int16_t", [4] = "int32_t", [8] = "int64_t"}
+
+/*** 整数型クラス ***/
+Integer = class:{
+	// val[=0]: 代入する数
+	// size[=4]: バイト数 {1, 2, 4, 8}
+	// signed[=false]: 符号付き/無し
+	constructor = def(@, val, size, signed){
+		@->set(val, size, signed)
+	},
+	
+	set = def(@, val, size, signed){
+		size = size or 4
+		local typename = itype[size]
+		if !typename {
+			error("Integer.set #3 unsupported integer size '"..size.."'")
+		}
+		@.size, @.signed = size, signed
+		@.value = ffi.new((signed and "" or "u")..typename, val or 0)
+	},
+	
+	/* 演算子 */
+	operator = :{
+		__add = def(@, val){
+			return Integer(@.value + (type(val) == 'table' and val.value or val), @.size, @.signed)
+		},
+		__sub = def(@, val){
+			return Integer(@.value - (type(val) == 'table' and val.value or val), @.size, @.signed)
+		},
+		__mul = def(@, val){
+			return Integer(@.value * (type(val) == 'table' and val.value or val), @.size, @.signed)
+		},
+		__div = def(@, val){
+			return Integer(@.value / (type(val) == 'table' and val.value or val), @.size, @.signed)
+		},
+		__mod = def(@, val){
+			return Integer(@.value % (type(val) == 'table' and val.value or val), @.size, @.signed)
+		},
+		__pow = def(@, val){
+			return Integer(@.value ^ (type(val) == 'table' and val.value or val), @.size, @.signed)
+		},
+		__idiv = def(@, val){
+			return Integer(@.value $ (type(val) == 'table' and val.value or val), @.size, @.signed)
+		},
+		__band = def(@, val){
+			return Integer(@.value & (type(val) == 'table' and val.value or val), @.size, @.signed)
+		},
+		__bor = def(@, val){
+			return Integer(@.value | (type(val) == 'table' and val.value or val), @.size, @.signed)
+		},
+		__bxor = def(@, val){
+			return Integer(@.value ~ (type(val) == 'table' and val.value or val), @.size, @.signed)
+		},
+		__bshl = def(@, val){
+			return Integer(@.value << (type(val) == 'table' and val.value or val), @.size, @.signed)
+		},
+		__bshr = def(@, val){
+			return Integer(@.value >> (type(val) == 'table' and val.value or val), @.size, @.signed)
+		},
+		__unm = def(@){
+			return Integer(-@.value, @.size, @.signed)
+		},
+		__len = def(@){
+			return tonumber(@.value)
+		},
+	},
+}

@@ -1,0 +1,196 @@
+/*** タグマッチング ***/
+// <span style="..."> や [font ...] などのようなタグへのマッチングを行うパターン
+// 全体キャプチャとタグ内部キャプチャを行う
+lpeg.Tg = def(head, tail, tagName){
+	return lpeg.C(lpeg.Bp(head, tail, lpeg.Qs'"'/0+lpeg.Qs"'"/0+lpeg.Ls()/0, lpeg.space^0*tagName*lpeg.space^1))
+}
+
+/*** マクロ対応文字列解析クラス ***/
+lpeg.Parser = class:{
+	constructor = def(@, grammar, pattESC){
+		@.macro = :{} // 定義済マクロテーブル
+		if type(grammar) == 'table' {
+			@->compile(grammar, pattESC)
+		}
+	},
+	
+	/* パーサー生成 */
+	// grammar: 文法テーブル
+	// pattESC: エスケープ文字が必要なら指定する
+	/*
+	 * 指定する文法は，第1戻り値に次の解析位置を指定する必要がある
+	 * 第2戻り値を指定すれば，[一致位置]～[次の解析位置-1]の部分を指定文字列で置換できる
+	 * （置換した場合次の解析位置は一致位置になる）
+	 * （第3戻り値が指定されているならその位置を次の解析位置とする）
+	 */
+	compile = def(@, grammar, pattESC){
+		@.escapePattern = pattESC and lpeg.P(pattESC) // エスケープ文字
+		@.parser = pattESC and lpeg.C(lpeg.P(pattESC)) * lpeg.Cp() / def(c, fin){ // エスケープ処理
+			if @.escape { // エスケープ文字が続いた場合は，エスケープ文字に対して onTracked メソッド実行
+				@.escape = false
+				return @->onTracked(fin, c)
+			}else{ // エスケープモードに入る場合，onEscaped メソッド実行
+				@.escape = true
+				return @->onEscaped(fin, c)
+			}
+		}
+		// 文法追加
+		for method, patt in pairs(grammar) {
+			local append = patt / def(...){
+				local fin, repl, next = @->onMatched(method, ...)
+				@.escape = false
+				return fin, repl, next
+			}
+			if @.parser { @.parser = @.parser + append }
+			else { @.parser = append }
+		}
+		@.parser = @.parser + lpeg.C(lpeg.utf8) * lpeg.Cp() / def(c, fin){ // 通常文字処理
+			@.escape = false
+			return @->onTracked(fin, c)
+		}
+	},
+	
+	/* マクロ定義 */
+	// patternは，[次の解析位置, 置換後の文字列, (置換後の解析位置)]を返さなければならない
+	// patternにnilを指定することでマクロ定義を削除できる
+	defineMacro = def(@, macroName, pattern){
+		@.macro[macroName] = pattern
+		// マクロパーサー再構築
+		@.macroParser = nil
+		for name, patt in pairs(@.macro) {
+			if !@.macroParser { @.macroParser = patt }
+			else { @.macroParser = @.macroParser + patt }
+		}
+	},
+	
+	/* 文字列解析実行 */
+	parse = def(@, subject){
+		local cur, len = 1, subject->len()
+		
+		if !@.parser { return subject }
+		@.escape = false // エスケープフラグOFF
+		while cur <= len {
+			local fin, repl, next
+			
+			if @.macroParser and !@.escape { // マクロが定義されているならマクロ実行
+				fin, repl, next = @.macroParser->match(subject, cur)
+			}
+			if repl { goto REPLACE }
+			else { goto MATCHING }
+			
+			: REPLACE : // 文字列の置換
+			subject = subject->replace(cur, fin-1, repl)
+			len = subject->len()
+			if next { cur = next } // 次の解析位置を指定された場合
+			goto FINISH
+			
+			: MATCHING : // 文字列のマッチング
+			fin, repl, next = @.parser->match(subject, cur)
+			if repl { goto REPLACE }
+			if type(fin) == 'string' {
+				Win32.showMessageBox(fin)
+			}
+			cur = fin
+			
+			: FINISH : // 一文字解析完了後のコールバック関数実行
+			@->onTrackFinished()
+		}
+		@->onParseFinished() // 解析終了後の関数実行
+		return subject
+	},
+	
+	
+	/* 仮想関数 */
+	/* 以下の仮想関数は全て[次の解析位置, (置換後の文字列), (置換後の解析位置)]を返さなければならない */
+	// 特にマッチングしなかった文字列に対する処理
+	onTracked = def(@, fin, capture){ return fin },
+	
+	// エスケープモードに入る場合の処理
+	onEscaped = def(@, fin, capture){ return fin, "" }, // エスケープ文字削除
+	
+	// grammarにマッチングした場合の処理
+	onMatched = def(@, method, ...){ return @[method](@, ...) }, // 対応するメソッド名のメソッドを呼ぶ
+	
+	// parse中，一回の解析が終了する度に呼び出される処理
+	onTrackFinished = def(@){},
+	
+	// parseが終わった時呼び出される処理
+	onParseFinished = def(@){},
+}
+
+
+/*** マクロプロセッサ用パーサー ***/
+/* マクロ定義 */
+// [def macro="マクロ名"]～[end]
+// Parserに渡すgrammarテーブルに追加して使用
+local tail = "[" * lpeg.space^0 * "end" * lpeg.space^0 * "]"
+lpeg.defineMacroGrammar = lpeg.Cp() * lpeg.Tg("[", "]", "def") * lpeg.C((1-tail)^0) * tail * lpeg.Cp()
+
+// Parserのメソッドにして使用
+def lpeg.defineMacroMethod(@, beg, capture, inner, content, fin){
+	if @.escape { // エスケープされているならインクリメントして終了
+		return @->onTracked(beg + 1, "[")
+	}
+	
+	local info = assert(loadstring("return :{"..inner.."}"))()
+	// マクロ展開パターン作成
+	local pattern = (lpeg.Tg("[", "]", info.macro)
+		+ lpeg.C("[" * lpeg.space^0 * info.macro * lpeg.C(lpeg.space^0) * "]")) * lpeg.Cp()
+	/ def(capture, inner, fin){
+		local repl = assert(loadstring("return :{"..inner.."}"))()
+		// %[...]置き換えパターン作成
+		local notReplaceArgs = @.escapePattern and lpeg.Cp() * @.escapePattern * "%[" * lpeg.Cp() / def(beg, fin){
+			// エスケープされているなら置き換えない
+			return fin, "%[", beg + 2
+		}
+		local replaceArgs = "%[" * lpeg.C((1-lpeg.P"]")^1) * "]" * lpeg.Cp() / def(arg, fin){ // 属性で置き換える
+			// 属性が指定されていない場合のデフォルト置換文字列を取得
+			local attr, defrep = (lpeg.C((lpeg.P(1)-"=")^1) * (-1 + "=" * lpeg.C(lpeg.P(1)^0)))->match(arg)
+			// 属性指定値 or デフォルト値 or 空文字で置換
+			return fin, repl[attr] or defrep or ""
+		}
+		if notReplaceArgs { replaceArgs = notReplaceArgs + replaceArgs }
+		// コンテンツ置き換え
+		return fin, replaceArgs->parse(content)
+	}
+	// マクロ登録
+	@->defineMacro(info.macro, pattern)
+	return fin, ""
+}
+
+/* マクロ削除 */
+// [undef macro="マクロ名"]
+// Parserに渡すgrammarテーブルに追加して使用
+lpeg.removeMacroGrammar = lpeg.Cp() * lpeg.Tg("[", "]", "undef") * lpeg.Cp()
+
+// Parserのメソッドにして使用
+def lpeg.removeMacroMethod(@, beg, capture, inner, fin){
+	if @.escape { return beg + 1 }
+	
+	local info = assert(loadstring("return :{"..inner.."}"))()
+	@->defineMacro(info.macro, nil)
+	return fin, ""
+}
+
+
+/* --- マクロプロセッサ使用例 ---
+local grammar = :{}
+local parser = lpeg.Parser()
+
+grammar.defineMacroCommand = lpeg.defineMacroGrammar
+grammar.removeMacroCommand = lpeg.removeMacroGrammar
+parser.defineMacroCommand = lpeg.defineMacroMethod
+parser.removeMacroCommand = lpeg.removeMacroMethod
+
+parser->compile(grammar, "\\")
+
+local source = [=[
+[def macro="Hello"]こんにちは%[sep]世界%[mark=！！][end]
+\[def macro="GoodBye"]さようなら%[sep]世界%[mark=！！][Hello sep=", ", mark="!?"][end]
+[Hello]
+[undef macro="Hello"][Hello]
+\[Hello sep="，", mark="!?"]
+]=]
+
+println(parser->parse(source))
+*/

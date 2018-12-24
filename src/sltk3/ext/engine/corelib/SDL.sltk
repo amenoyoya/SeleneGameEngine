@@ -1,0 +1,38 @@
+/* Sltk.SDL.Textureピクセルデータ編集関数をクラスに追加 */
+local meta = getmetatable(Sltk.SDL.Texture)
+setmetatable(Sltk.SDL.Texture, :{})
+Sltk.SDL.Texture.getPixelData = def(@){
+	@.pixels = Sltk.Binary(@->getPixels())
+	return Sltk.getBinaryData(@.pixels, @->getWidth() * @->getHeight() * @->getFormat())
+}
+Sltk.SDL.Texture.setPixelData = def(@, num, data){
+	if @.pixels {
+		if data == nil { Sltk.setBinaryData(@.pixels, #num, num) }
+		else { Sltk.setBinaryData(@.pixels, num, data) }
+	}
+	return @->updatePixels()
+}
+setmetatable(Sltk.SDL.Texture, meta)
+
+
+/* Sltk.SDL.Window::getNativeHandle */
+meta = getmetatable(Sltk.SDL.Window)
+setmetatable(Sltk.SDL.Window, :{})
+Sltk.SDL.Window.getNativeHandle = def(@){
+	return Sltk.SDL.getNativeWindowHandle and Sltk.SDL.getNativeWindowHandle(@) or 0
+}
+setmetatable(Sltk.SDL.Window, meta)
+
+
+/* エラーハンドラー */
+local showMessage = (Sltk.Win32 and def(msg){
+		Sltk.Win32.showMessageBox(msg, "SeleneTalkSDL Script Error", 0x00000030)
+	} or def(msg){
+		Sltk.Console.writeLine(msg)
+	}
+)
+
+def Sltk.Engine.errorHandler(msg){
+	showMessage(msg)
+	Sltk.SDL.close()
+}

@@ -1,0 +1,34 @@
+/** Gameライブラリ最上位ファイル **/
+
+require "Core" // コアライブラリ
+require "Advanced/Conductor/__Main" // ゲーム進行制御クラス
+require "Advanced/Map/__Main" // マップクラス
+
+// SDL名前空間をグローバル化
+// 同名のグローバル関数がある場合はSDL_XXXにリネーム
+// using( SDL, def(name){ return "SDL_"..name } )
+
+/* === 60frameごとに現在時刻を更新・表示するサンプル ===
+SDL.App->setup :{
+	width = 480, height = 360,
+}
+
+local nowtime
+
+SDL.App.routine[0] = def(){ // ルーチンID：0番で表示
+	while true {
+		if nowtime { SDL.drawText(5, 5, nowtime) }
+		yield()
+	}
+}
+SDL.App.routine[1] = def(@){ // ルーチンID：1番で時間更新
+	while true {
+		local date = DateTime()
+		getDate(date)
+		nowtime = string.format("%d時%d分%d秒", date.hour, date.min, date.sec)
+		yield(60) // 60フレーム毎
+	}
+}
+
+SDL.App->execute()
+*/

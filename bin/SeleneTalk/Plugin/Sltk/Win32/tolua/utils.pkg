@@ -1,0 +1,110 @@
+namespace Sltk{
+	namespace Win32{
+		/* コンソールを開かずにPipe処理するためのクラス */
+		class Pipe: public Sltk::Object {
+		public:
+			Pipe(){}
+			explicit Pipe(const char *filename);
+			
+			bool open(const char *filename);
+			void close();
+			
+			Sltk::File *getReader();
+			Sltk::File *getWriter();
+			/* PipeWriterにより文字列を送信する場合,
+			 * File::writeLine("command") が失敗するまでループする必要がある
+			 */
+		};
+		
+		
+		/*** プロセス操作 ***/
+		// 起動中の全プロセスを取得する
+		bool acquireAllProcess();
+		
+		// 取得したプロセスの数、ID等
+		u32 getProcessCount();
+		u32 getProcessID(u32 n);
+		string getProcessName(u32 n);
+		
+		/* プロセスメモリ操作クラス */
+		class Process: public Sltk::Object{
+		public:
+			Process();
+			~Process();
+			
+			// 指定プロセスをオープンして、メモリを操作できるようにする
+			bool open(const char *name);
+			bool open(u32 id);
+			
+			// 指定プロセスを起動して、メモリを操作できるようにする
+			// pathには、実行したいアプリ名と引数の両方を渡すことができる
+			bool execute(const char *path);
+			
+			void close();
+			
+			/* プロセスメモリ読み込み＆書き込み */
+			bool read(u32 address, void *dest, u32 size);
+			
+			// バイト数を指定して指定アドレスの値を取得
+			u32 getValue(u32 address, u8 byte=4);
+			
+			// メモリを書き込む際、bufの型には十分注意すること。
+			// 1byteずつの値の配列を渡す際には、unsigned char[]をbufに渡し、
+			// 間違ってもint[]を渡してはならない。
+			bool write(u32 address, const void *buf, u32 size);
+			
+			// 文字列を使った特殊な書き込み
+			// 2文字ずつの単位で16進数WORDとして書き込んでいく
+			// ??で指定された部分の値は変更しない
+			bool writeExpression(u32 address, const char *exp);
+			bool setValue(u32 address, u32 val, u32 byte=4);
+			
+			// プロセスが呼び出したモジュールを内部で列挙する
+			// モジュール数が返る
+			u32 acquireModules();
+			
+			// enumModule実行後：モジュール名を取得
+			string getModuleNameFromHandle(u32 hmod); // enumerateModules無関係
+			string getModuleName(u32 index);
+			
+			// enumModule実行後：モジュール名からモジュールハンドルを検索
+			u32 getModule(const char *name);
+			
+			// 開いているプロセスを終了させる
+			bool kill();
+			
+			// 開いているスレッドのID (executeで起動した場合のみ存在)
+			u32 getThreadID() const;
+			// 開いているプロセスのID
+			u32 getProcessID() const;
+			// プロセスハンドル
+			u32 getHandle() const;
+		};
+		
+		
+		/* ----- レジストリ操作クラス ----- */
+		class Registry: public Sltk::Object {
+		public:
+			Registry();
+			~Registry();
+			
+			bool open(u32 key /*HKEY_CURRENT_USER*/, const char *sub);
+			bool create(u32 key, const char *sub);
+			void close();
+			
+			// nameにnullptrを指定すると、(既定)になる
+			// 戻り値：type
+			u32 getValue(Sltk::Binary *data, const char *name);		// 一般的
+			u32 getString(Sltk::Binary *data, const char *name);	// データをREG_SZ(文字列)で取得
+			
+			// nameに""を指定すると、(既定)になる
+			bool setValue(const char *name, u32 data);
+			bool setString(const char *name, const char *data);
+			void remove(u32 MAX_KEY_LENGTH=256);	//openしているレジストリキーを削除
+			bool remove(const char *name);
+		};
+		
+		//レジストリ変更をすぐに反映する
+		void reflectRegistry();
+	}
+}

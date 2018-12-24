@@ -1,0 +1,98 @@
+require "Game"
+
+local Button = class(SDL.Clickable):{
+	constructor = def(@, text){
+		local layer = SDL.TextLayer(text)
+		@.width, @.height = layer->getWidth()+10, layer->getHeight()+10
+		def @->onDrawing(x, y, w, h, status){
+			SDL.fillRectangle(x, y, w, h, status > 1 and SDL.Color(55,200,255) or SDL.Color(55,55,255))
+			if status > 0 {
+				SDL.fillRectangle(x-1, y-1, w, h, SDL.Color(0,100,200,100))
+				SDL.fillRectangle(x+1, y+1, w, h, SDL.Color(0,100,200,100))
+			}
+			layer->draw(x+6, y+6)
+		}
+	},
+	draw = def(@, x, y, w, h){
+		SDL.Clickable.draw(@, x, y, w, h)
+	},
+}
+
+local nowtime // 現在時刻
+
+SDL.App.routine[0] = def(){ // ルーチンID：0番で表示
+	// スクロールパネルサンプル
+	local sample1 = SDL.TextLayer"[font color=SDL.Color(200,200,0)]スクロールパネルサンプル"
+	local txt = SDL.RichText()
+	for i = 1, 400 {
+		txt->parse("[font color=SDL.Color(255,"..(i*5)..", "..(i*15)..")]"..i)
+		if i % 20 == 0 { txt->feedLine() }
+	}
+	txt->alignPositions()
+	local layer = SDL.Layer(txt->getWidth()+10, txt->getHeight()+10)
+	layer->beginScene()
+	txt->draw(5, 5)
+	layer->endScene()
+	txt->clear()
+	local panel = SDL.ScrollPanel(layer, 200, 200)
+	panel->setup(10, 10)
+	
+	// ADVサンプル
+	local adv = SDL.ADV(50, 100)
+	local text = "[style vertical=false]これは[font color=SDL.Color(255,0,0)][ruby subject='ADV風文字列描画', text='アドベンチャーゲーム']サンプル[font color='default']です[l]\n"
+		.."[font name='C:/Windows/Fonts/ARIAL.TTF', italic=true]italic[font name='default', italic=false]体や"
+		.."[font underLine=true]アンダーライン，[font underLine=false, strikeThrough=true]打ち消し線[font strikeThrough=false]\n"
+		.."などの文字装飾が可能です[graph file='icon002.png'][l]"
+	local textv = "[style vertical=true, edgeColor=SDL.Color(0,0,255)]ちなみに[font color=SDL.Color(0,200,200)]縦書き表示[font color='default']にも対応しています[l]"
+	local btn = Button("このボタンを押すと[font color=SDL.Color(255,0,0)]ADVサンプル[font color='default']が実行されます")
+	btn.onClicked = def(){
+		adv->execute(text)
+		adv->execute(textv)
+	}
+	
+	// 選択肢パネルサンプル
+	local sample2 = SDL.TextLayer"[font color=SDL.Color(200,200,0)]選択肢パネルサンプル"
+	local items = :{
+		"りんご", "みかん", "バナナ", "パイナップル", "キウイ", "梨"
+	}
+	local selector = SDL.SelectorPanel(50, 200, 250, 250)
+	selector->open(items, 2)
+	def selector->onItemClicked(i){
+		ITEM = items[i]
+		adv->execute"[style vertical=false]{ITEM}を食べた！[l]"
+	}
+	
+	// エディットボックスサンプル
+	local sample3 = SDL.TextLayer"[font color=SDL.Color(200,200,0)]エディットボックスサンプル"
+	local editbox = SDL.EditBox->append(300, 20)
+	local ok = Button "OK"
+	ok.onClicked = def(){
+		TEXT = editbox->getText()
+		adv->execute"[style vertical=false]入力された文字列は\n「{TEXT}」\nです[l]"
+	}
+	
+	while true {
+		if nowtime { SDL.drawEdgeText(5, 5, nowtime) } // 現在時刻表示
+		SDL.drawEdgeText(550, 450, "FPS: "..SDL.App.fpsManager->getFPS(), SDL.Color(255,0,0)) // FPS表示
+		btn->draw(50, 50)
+		sample1->draw(350, 130)
+		panel->draw(350, 150)
+		sample2->draw(50, 180)
+		selector->draw()
+		sample3->draw(10, 380)
+		editbox->draw(10, 400)
+		ok->draw(320, 395)
+		yield()
+	}
+}
+
+SDL.App.routine[1] = def(){ // ルーチンID：1番で現在時刻更新
+	local date = DateTime()
+	while true {
+		getDate(date)
+		nowtime = string.format("%d時%d分%d秒", date.hour, date.min, date.sec)
+		yield(60) // ループイベント1番の実行間隔を60frame(=1秒)に
+	}
+}
+
+SDL.App->execute()

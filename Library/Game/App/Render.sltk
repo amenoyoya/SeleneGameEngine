@@ -1,0 +1,107 @@
+/*** 描画関数ラッピング ***/
+
+/** 文字描画(遅いのであまり使わないほうが良い) **/
+local textTexture = SDL.Texture()
+// 通常描画
+def SDL.drawText(x, y, text, color, font){
+	if !color { color = SDL.Color(250, 250, 250) }
+	if !font { font = SDL.App.font }
+	textTexture->open(font->createSurface(text), true)
+	return textTexture->setColor(color) and textTexture->draw(x, y)
+}
+// 影付き描画
+def SDL.drawShadowText(x, y, text, color, shadow, font){
+	if !color { color = SDL.Color(250, 250, 250) }
+	if !shadow { shadow = SDL.Color(50, 50, 50) }
+	if !font { font = SDL.App.font }
+	textTexture->open(font->createSurface(text), true)
+	// フォントサイズを25で除算して小数点以下切り上げた値を影の位置とする
+	local shift = math.ceil(font->height() / 25)
+	return textTexture->setColor(shadow) and textTexture->draw(x+shift, y+shift)
+		and textTexture->setColor(color) and textTexture->draw(x, y)
+}
+// エッジ付き描画
+def SDL.drawEdgeText(x, y, text, color, shadow, font){
+	if !color { color = SDL.Color(250, 250, 250) }
+	if !shadow { shadow = SDL.Color(50, 50, 50) }
+	if !font { font = SDL.App.font }
+	textTexture->open(font->createSurface(text), true)
+	return textTexture->setColor(shadow) and textTexture->draw(x-1, y-1)
+		and textTexture->draw(x+1, y-1) and textTexture->draw(x+1, y+1) and textTexture->draw(x-1, y+1)
+		and textTexture->setColor(color) and textTexture->draw(x, y)
+}
+
+
+/** スクリーンショット作成 **/
+def SDL.getScreenshot(){
+	local win = SDL.getDrawingWindow()
+	local w, h = win->getWidth(), win->getHeight()
+	local bin = Binary(w * h * 3)
+	
+	if SDL.readPixels(bin->getPointer(), 0, 0, w, h) { return bin, w, h }
+}
+
+def SDL.saveScreenshot(filename, saveType){
+	if !saveType { saveType = SDL.SAVE_BMP }
+	local bin, w, h = SDL.getScreenshot()
+	if bin {
+		return SDL.saveImage(SDL.createImage(bin->getPointer(), w, h), filename, saveType)
+	}
+	return false
+}
+
+
+/*** テクスチャ作成簡略化クラス ***/
+// 指定位置をテクスチャの中心にして描画
+local def drawCenter(@, x, y, w, h, sx, sy, sw, sh){
+	if w == nil { w = -1 }
+	if h == nil { h = -1 }
+	if sx == nil { sx = 0 }
+	if sy == nil { sy = 0 }
+	if sw == nil { sw = -1 }
+	if sh == nil { sh = -1 }
+	return @->draw(x - (w == -1 and @->getWidth() or w) / 2,
+		y - (h == -1 and @->getHeight() or h) / 2,
+		w, h, sx, sy, sw, sh)
+}
+
+// 文字列テクスチャ作成
+local def Text_open(@, font, text){
+	if !@->Texture_open(font->createSurface(text), true) {
+		error("[SDL.Text]failed to create Texture (text '"..text.."')")
+	}
+}
+
+// レイヤー作成
+local def Layer_open(@, width, height){
+	if !@->Texture_open(width, height, SDL.TEXTURE_TARGET) {
+		error("[SDL.Layer]failed to create layer (size ["..width..", "..height.."])")
+	}
+	@->beginScene()
+	SDL.clearScreen()
+	@->endScene()
+}
+
+// レイヤーを描画対象にする
+local def beginScene(@){ SDL.setRenderTarget(@) }
+local def endScene(@){ SDL.setRenderTarget() }
+
+/* 文字列テクスチャクラス */
+def SDL.Text(font, text){
+	local @ = SDL.Texture()
+	
+	@.Texture_open = @.open
+	@.open, @.drawCenter = Text_open, drawCenter
+	if font and type(text) == 'string' { @->open(font, text) }
+	return @
+}
+
+/* レイヤー(SDL.setRenderTargetの対象にできるテクスチャ)クラス */
+def SDL.Layer(width, height){
+	local @ = SDL.Texture()
+	
+	@.Texture_open = @.open
+	@.open, @.drawCenter, @.beginScene, @.endScene = Layer_open, drawCenter, beginScene, endScene
+	if type(width) == 'number' and type(height) == 'number' { @->open(width, height) }
+	return @
+}

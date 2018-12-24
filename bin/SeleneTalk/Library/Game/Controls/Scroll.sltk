@@ -1,0 +1,123 @@
+/*** スクロールバークラス ***/
+/* ～バーの移動量の算出～
+バーの移動量をS、バーサイズをB、レールサイズ(スクロールバーサイズ-矢印サイズ*2)をL、
+そしてスクロール回数をNとする。この時、これらの関係は S = (L-B)/N となる。 */
+
+local img_arrow, img_bar = :{}, :{}
+
+/** private スクロールバー矢印ボタン用クラス **/
+// dir: 0=UP, 1=LEFT, 2=DOWN, 3=RIGHT
+local ArrowButton = class(SDL.Clickable) :{
+	constructor = def(@, dir){
+		if !img_arrow[dir] {
+			img_arrow[dir] = SDL.Image(Path.appendSlash(Path.getParent(debug.getinfo(1).source, false)).."arrow"..dir..".png")
+		}
+		SDL.Clickable.constructor(@, img_arrow[dir])
+	},
+}
+
+/** local スクロールバー用バークラス **/
+// dir: 0=Vertical, 1=Horizontal
+local Bar = class(SDL.Draggable) :{
+	constructor = def(@, dir){
+		if !img_bar[dir] {
+			img_bar[dir] = SDL.Image(Path.appendSlash(Path.getParent(debug.getinfo(1).source, false)).."bar"..dir..".png")
+		}
+		SDL.Draggable.constructor(@, img_bar[dir])
+	},
+}
+
+/*** private スクロールバー ***/
+// dir: 0=縦方向，1=横方向
+local Scrollbar = class :{
+	constructor = def(@, dir, size, numScroll){
+		@.arrow = :{size = 16, back, fore} // 矢印情報
+		@.size = 0 // スクロールバーサイズ
+		@.dir = dir // スクロールバー方向
+		@.bar = :{pos = 0, shift = 0, size = 0, maxScroll = 0, obj} // バー情報
+		
+		if size and numScroll {
+			@->open(size, numScroll)
+		}
+	},
+	
+	/* レール部分の描画 */
+	drawRail = def(@, x, y, w, h){
+		SDL.fillRectangle(x, y, w, h, SDL.Color(200,200,200))
+	},
+	
+	/* スクロールバーのサイズとスクロールの最大回数を設定 */
+	open = def(@, size, numScroll){
+		@.size, @.bar.pos, @.bar.maxScroll = size, 0, numScroll
+		// レールサイズ = スクロールバーサイズ - 矢印サイズ*2
+		local L = (size-@.arrow.size*2)
+		// スクロールの最大回数に応じてバーのサイズを変える
+		if numScroll < 5 {
+			// スクロール回数が4以下なら単純にレールサイズを
+			// (回数+1)で割ったサイズをバーサイズとする
+			// ※例えばスクロール回数が1回だけなら、バーサイズはレールサイズの半分になる
+			@.bar.size = L / (numScroll+1)
+		}elif numScroll < 10 {
+			// スクロール回数が9以下なら(レールサイズ/(回数/2+1))をバーサイズとする
+			@.bar.size = L / (numScroll/2 + 1)
+		}else{
+			// スクロール回数が10以上なら(レールサイズ/10[固定])をバーサイズとする
+			@.bar.size = L / 10
+		}
+		// バーサイズからバーの移動量を求める
+		@.bar.shift = (L-@.bar.size) / numScroll
+		// 各種バー、ボタンオブジェクトを生成
+		@.bar.obj = Bar(@.dir)
+		@.arrow.back = ArrowButton(@.dir)
+		@.arrow.fore = ArrowButton(@.dir+2)
+		@.arrow.back.width, @.arrow.back.height = @.arrow.size, @.arrow.size
+		@.arrow.fore.width, @.arrow.fore.height = @.arrow.size, @.arrow.size
+		@.bar.obj.width = @.dir == 0 and @.arrow.size-2 or @.bar.size
+		@.bar.obj.height = @.dir == 0 and @.bar.size or @.arrow.size-2
+		/* 各種ボタン挙動 */
+		@.arrow.back.onClicked = def(){ @->scroll(-1) }
+		@.arrow.fore.onClicked = def(){ @->scroll(1) }
+	},
+	
+	/* 描画 */
+	draw = def(@, x, y){
+		// バーの位置はレールの開始位置から(Bar.pos*Bar.shift)の位置
+		local barPos = (@.dir == 0 and y or x) + @.arrow.size + @.bar.pos * @.bar.shift
+		// 描画
+		@->drawRail(x + (@.dir == 0 and 0 or @.arrow.size), y + (@.dir == 0 and @.arrow.size or 0),
+			@.dir == 0 and @.arrow.size or @.size-@.arrow.size*2, @.dir == 0 and @.size-@.arrow.size*2 or @.arrow.size)
+		@.arrow.back->draw(x, y)
+		@.arrow.fore->draw(x + (@.dir == 0 and 0 or @.size-@.arrow.size), y + (@.dir == 0 and @.size-@.arrow.size or 0))
+		@.bar.obj->draw(@.dir == 0 and x+1 or barPos, @.dir == 0 and barPos or y+1)
+		// ボタン押しっぱなし処理
+		if @.arrow.back->isPressing() == 3 { @->scroll(-1) }
+		elif @.arrow.fore->isPressing() == 3 { @->scroll(1) }
+		// バーのドラッグ処理
+		if @.bar.obj.dragging {
+			@->scroll(@.bar.obj.mov[@.dir == 0 and 'y' or 'x'] $ @.bar.shift)
+		}
+	},
+	
+	/* スクロール実行 */
+	scroll = def(@, n){
+		@.bar.pos = @.bar.pos + math.floor(n)
+		if @.bar.pos < 0 { @.bar.pos = 0 }
+		if @.bar.pos > @.bar.maxScroll { @.bar.pos = @.bar.maxScroll }
+	},
+}
+
+/*** 縦スクロールバー ***/
+// height: 高さ,  numScroll: 何回スクロール可能か
+SDL.ScrollbarV = class(Scrollbar):{
+	constructor = def(@, height, numScroll){
+		Scrollbar.constructor(@, 0, height, numScroll)
+	},
+}
+
+/*** 横スクロールバー ***/
+// width: 幅,  numScroll: 何回スクロール可能か
+SDL.ScrollbarH = class(Scrollbar):{
+	constructor = def(@, width, numScroll){
+		Scrollbar.constructor(@, 1, width, numScroll)
+	},
+}

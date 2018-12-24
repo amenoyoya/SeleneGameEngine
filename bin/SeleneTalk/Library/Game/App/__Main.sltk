@@ -1,0 +1,141 @@
+require "../../Routine"
+
+/*** デフォルトプロシージャ ***/
+local defproc = SDL.defaultEventProcedure
+def SDL.defaultEventProcedure(event){
+	if event.type == SDL.WINDOWEVENT and event.window.event == SDL.WINDOWEVENT_CLOSE {
+		// メインウィンドウが閉じたら，子ウィンドウが残っていても終了する
+		if event.window.windowID == 1 { return false }
+		else {
+			SDL.getWindowFromID(event.window.windowID)->close()
+			return true
+		}
+	}
+	return defproc(event)
+}
+
+/*** SDL_Applicationクラス ***/
+SDL.App = :{
+	window = SDL.Window(),			// メインウィンドウ
+	subWindows = :{},				// 子ウィンドウ配列
+	routine = Routine(),			// メインルーチン
+	subRoutines = :{},				// サブルーチン配列
+	reader = FileReader(),			// データ読み込み用
+	fpsManager = SDL.FPSManager(),	// FPSマネージャー
+	font = SDL.Font(),				// グローバルフォント
+	settings = :{					// 設定用テーブル
+		fps = 60, // FPS
+		procedure = SDL.defaultEventProcedure, // ウィンドウプロシージャ
+		title = "SDL_Window", // ウィンドウタイトル
+		background = SDL.Color(0,0,0), // 背景色
+		x = -1, y = -1, width = 640, height = 480, // ウィンドウ位置・サイズ
+		windowFlag = 0, // ウィンドウ作成フラグ
+		icon = nil, // アイコンパス
+		renderer = "opengl", // 描画エンジン
+		fontName = "C:\\Windows\\Fonts\\msgothic.ttc", fontSize = 16 // グローバルフォント設定
+	},
+}
+
+/* 設定用テーブルに指定テーブルをコピー */
+def SDL.App->setup(settings){
+	table.copy(settings, @.settings)
+}
+
+/* アプリケーション実行 */
+def SDL.App->execute(){
+	// 初期化
+	if !SDL.open(@) { error(SDL.getMessage()) }
+	// メインウィンドウ生成
+	@.window->setBackgroundColor(@.settings.background)
+	if !@.window->open(@.settings.title, @.settings.x, @.settings.y, @.settings.width, @.settings.height,
+		@.settings.windowFlag, @.settings.renderer)
+	{
+		error(getMessage(@.window))
+	}
+	if @.settings.renderer->sub(1, 6) == "opengl" { // OpenGLなら2D描画モードにしておく
+		SDL.GL.set2DView(@.settings.width, @.settings.height)
+	}
+	// アイコン設定
+	if type(@.settings.icon) == 'string' {
+		@.window->setIcon(SDL.loadImage(SDL.readFile(@.settings.icon)))
+	}
+	// グローバルフォント作成
+	if !@.font->open(@.settings.fontName, @.settings.fontSize) {
+		error(getMessage(@.font))
+	}
+	@.font->setStyle(SDL.FONT_BOLD)
+	SDL.stopTextInput() // テキストインプットは無効化しておく
+	
+	/*** 実行 ***/
+	@.fpsManager->setFPS(@.settings.fps)
+	@.fpsManager->start()
+	while SDL.pollEvent(@.settings.procedure) {
+		@.fpsManager->beginScene()
+		/** メイン描画 **/
+		if !@.window->beginScene() { SDL.clearScreen() }
+		@.routine->execute() // ルーチン実行
+		@.window->endScene()
+		/**  サブ描画  **/
+		for i = 1, #@.subWindows {
+			local win, routine = @.subWindows[i], @.subRoutines[i]
+			if !win->beginScene() { SDL.clearScreen() }
+			routine->execute() // サブルーチン実行
+			win->endScene()
+		}
+		/****************/
+		@.fpsManager->endScene()
+	}
+	@.window->close()
+	SDL.close()
+}
+
+/* アプリケーションを終了させる */
+def SDL.App->quit(){
+	local event = SDL.Event()
+	event.type = SDL.QUIT
+	SDL.pushEvent(event)
+}
+
+/* ウィンドウモード変更 */
+def SDL.App->changeWindowMode(){
+	@.settings.windowed = !@.settings.windowed
+	return @.window->setWindowMode(@.settings.windowed)
+}
+
+/* 子ウィンドウ作成 */
+def SDL.App->appendWindow(title, x, y, width, height, bgcolor, resizable){
+	local win, n = SDL.Window(bgcolor), #@.subWindows+1
+	
+	if !win->open(title, x, y, width, height, true, resizable) { error(getMessage(win)) }
+	@.subWindows[n] = win
+	@.subRoutines[n] = Routine()
+	return n
+}
+
+/* loadImage, Music::open に渡すためのファイルデータ */
+def SDL.readFile(filename){
+	local bin = Binary()
+	
+	if !SDL.App.reader->open(filename) {
+		error("SDL.readFile failed to load file '"..filename.."'")
+	}
+	bin->resize(SDL.App.reader->getSize())
+	SDL.App.reader->read(bin->getPointer(), bin->getSize())
+	SDL.App.reader->close()
+	return bin->getPointer(), bin->getSize()
+}
+
+/* ファイルデータを文字列として取得 */
+def SDL.loadFile(filename){
+	if !SDL.App.reader->open(filename) {
+		error("SDL.loadFile failed to load file '"..filename.."'")
+	}
+	local str = SDL.App.reader->load(SDL.App.reader->getSize())
+	SDL.App.reader->close()
+	return str
+}
+
+
+require "KeyMap"
+require "Render"
+require "Image"

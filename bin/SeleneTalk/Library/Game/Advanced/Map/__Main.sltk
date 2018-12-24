@@ -1,0 +1,156 @@
+require "../Conductor/__Main"
+
+/*** 2Dマップ管理テーブル ***/
+SDL.Map = :{}
+
+/* 通行可能判定 */
+def SDL.Map.canMove(@, x, y){
+	if x < 1 or x > @.xNum or y < 1 or y > @.yNum { return false }
+	// 地形通行可能判定
+	local tile = @.tiles[(y-1) * @.xNum + x]
+	if tile and tile.wall { return false }
+	// 主人公のいる場所は通行不可
+	if @.char.x == x and @.char.y == y { return false }
+	// イベント通行可能判定
+	for _, event in pairs(@.events) {
+		if event.wall and event.x == x and event.y == y { return false }
+	}
+	return true
+}
+
+/* 指定方向にキャラを動かす */
+// dir: 上=2, 下=0, 左=3, 右=1
+// 動いたらtrueを返す
+def SDL.Map.move(@, char, dir){
+	if dir == 0 {
+		char.dir = dir
+		if SDL.Map.canMove(@, char.x, char.y + 1) { char.y = char.y + 1; return true }
+	}elif dir == 1 {
+		char.dir = dir
+		if SDL.Map.canMove(@, char.x + 1, char.y) { char.x = char.x + 1; return true }
+	}elif dir == 2 {
+		char.dir = dir
+		if SDL.Map.canMove(@, char.x, char.y - 1) { char.y = char.y - 1; return true }
+	}elif dir == 3 {
+		char.dir = dir
+		if SDL.Map.canMove(@, char.x - 1, char.y) { char.x = char.x - 1; return true }
+	}
+	return false
+}
+
+/* イベントと主人公が接触しているか */
+// event = :{
+// 		x, y: イベント位置
+// 		dx, dy: イベントと主人公の距離
+// 			+数値: 数値分の距離以内の位置にいて主人公がイベントの方向を向いているならtrue
+// 			-数値: 数値分の距離の位置にいて主人公がイベントの方向を向いているならtrue
+// 		chdir: falseなら主人公の向きを無視する（dx*dyの矩形領域で接触判定）
+// }
+def SDL.Map.isContact(char, event){
+	local x, y, dx, dy, chdir = event.x, event.y, event.dx, event.dy, event.chdir
+	
+	if chdir { // 主人公の向きを考慮
+		if char.dir == 0 { // 下を向いている場合
+			if dy < 0 { return x - char.x == 0 and y - char.y == -dy }
+			else { return x - char.x == 0 and 0 <= y - char.y and y - char.y <= dy }
+		}elif char.dir == 2 { // 上を向いている場合
+			if dy < 0 { return x - char.x == 0 and y - char.y == dy }
+			else { return x - char.x == 0 and y - char.y <= 0 and y - char.y >= -dy }
+		}elif char.dir == 1 { // 右を向いている場合
+			if dx < 0 { return y - char.y == 0 and x - char.x == -dx }
+			else { return y - char.y == 0 and 0 <= x - char.x and x - char.x <= dx }
+		}else{ // 左を向いている場合
+			if dx < 0 { return y - char.y == 0 and x - char.x == dx }
+			else { return y - char.y == 0 and x - char.x <= 0 and x - char.x >= -dx }
+		}
+	}else{ // 主人公の向きを無視（dx*dyの矩形領域で接触判定）
+		if dx < 0 and dy < 0 {
+			return math.abs(x - char.x) == -dx and math.abs(y - char.y) == -dy
+		}elif dx < 0 and dy >= 0 {
+			return math.abs(x - char.x) == -dx and math.abs(y - char.y) <= dy
+		}elif dx >= 0 and dy < 0 {
+			return math.abs(x - char.x) <= dx and math.abs(y - char.y) == -dy
+		}else{
+			return math.abs(x - char.x) <= dx and math.abs(y - char.y) <= dy
+		}
+	}
+}
+
+/* マップ保存 */
+// filenameを指定しない場合はシリアライズされたテーブル文字列が返る
+def SDL.Map.save(@, filename){
+	local data = :{
+		tileWidth = @.tileWidth, tileHeight = @.tileHeight,
+		xNum = @.xNum, yNum = @.yNum, char = @.char,
+		tiles = @.tiles, events = @.events
+	}
+	if filename { return saveFile(filename, table.serialize(data)->u8encode()) }
+	return table.serialize(data)->u8encode()
+}
+
+/* マップ読込 */
+// mapdata: ファイル名が指定された場合はファイルからロード．テーブルなら直接そのテーブルからロード
+def SDL.Map.load(@, mapdata){
+	local data = type(mapdata) == 'table' and mapdata or assert(loadstring("return "..SDL.loadFile(mapdata)))()
+	
+	@.tileWidth, @.tileHeight = data.tileWidth, data.tileHeight
+	@.xNum, @.yNum = data.xNum, data.yNum
+	@.char = table.getclone(data.char)
+	if data.char.__texture { @.char.texture = assert(loadstring("return "..data.char.__texture))() }
+	@.tiles = :{}
+	for i, tile in pairs(data.tiles) {
+		@.tiles[i] = table.getclone(tile)
+		@.tiles[i].texture = assert(loadstring("return "..tile.__texture))()
+	}
+	@.events = :{}
+	for i, event in pairs(data.events) {
+		@.events[i] = table.getclone(event)
+		@.events[i].texture = assert(loadstring("return "..event.__texture))()
+		@.events[i].action = event.__action and assert(loadstring("return def(@, map){"..event.__action.."}"))()
+		@.events[i].event = event.__event and SDL.Conductor()->parse(event.__event) or nil
+	}
+}
+
+
+/*** マップ用イベント ***/
+local mapEvents = table.getclone(require "../Conductor/Events")
+
+/* マップジャンプ */
+// 別のマップに移行
+// cond="条件"があるなら条件一致でmapにジャンプ
+// condが指定されていないなら無条件でmapにジャンプ
+// x,yが指定された場合，その位置に主人公移動
+/*events.move = def(@, info){
+	if info.map {
+		if info.cond { // 条件が設定されている場合，条件一致でジャンプ
+			if assert(loadstring("return "..info.cond))() {
+				@.scenario = type(info.scene) == 'string' and @->parse(SDL.loadFile(info.scene)) or info.scene
+				@.cur = 0
+			}
+		}else{ // 無条件ジャンプ
+			@.scenario = type(info.scene) == 'string' and @->parse(SDL.loadFile(info.scene)) or info.scene
+			@.cur = 0
+		}
+	}
+}*/
+
+def SDL.Map->initialize(events){
+	@.conductor = SDL.Conductor(events or mapEvents) // イベント実行用
+	
+	// ADVイベント設定
+	@.conductor.adv.x, @.conductor.adv.y = 70, SDL.App.settings.height - 130
+	@.conductor.adv.window.x, @.conductor.adv.window.y = 50, SDL.App.settings.height - 150
+	@.conductor.adv.window.width = SDL.App.settings.width - 100
+	@.conductor.adv.window.height = SDL.App.settings.height - 340
+	@.conductor.adv.id = 1001 // ゲームルーチン1001番でADV実行
+	
+	// 選択肢イベント設定
+	@.conductor.selector.settings.x = "center"
+	@.conductor.selector.settings.y = "center"
+	@.conductor.selector.settings.width = SDL.App.settings.width - 200
+	@.conductor.selector.settings.height = SDL.App.settings.height $ 2
+	@.conductor.selector.settings.itemWidth = SDL.App.settings.width - 200
+}
+
+require "Editor"
+require "Player"

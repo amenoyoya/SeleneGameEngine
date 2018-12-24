@@ -1,0 +1,189 @@
+/*** === index 0 から始まる固定長多次元配列 === ***/
+
+/*** 固定長配列 ***/
+Array = class :{
+	/* コンストラクタ */
+	constructor = def(@, size, init){
+		@->allocate(size)
+		if type(init) == 'table' { @->set(init) }
+	},
+	
+	/* メタテーブル */
+	operator = :{
+		__index = def(@, i){
+			if type(i) == 'number' {
+				if i >= 0 and i < @.size {
+					return @.data[math.floor(i)]
+				}
+			}else{
+				return rawget(@, i)
+			}
+		},
+		__newindex = def(@, i, val){
+			if type(i) == 'number' {
+				if i >= 0 and i < @.size {
+					@.data[math.floor(i)] = val
+				}
+			}else{
+				rawset(@, i, val)
+			}
+		},
+		__len = def(@){
+			return @.size
+		},
+	},
+	
+	/* テーブルで配列セット */
+	set = def(@, tbl){
+		for i = 1, #tbl { @[i-1] = tbl[i] }
+	},
+	
+	/* 配列クリア */
+	clear = def(@){
+		@.data = :{}
+	},
+	
+	/* 配列サイズ変更 */
+	allocate = def(@, size){
+		@->clear()
+		@.size = size or 0
+	},
+	resize = def(@, size){
+		size = size or 0
+		if size < @.size {
+			for i = size, @.size-1 { @.data[i] = nil }
+		}
+		@.size = size
+	},
+}
+
+
+/*** 固定長2次元配列 ***/
+Array2D = class :{
+	/* コンストラクタ */
+	constructor = def(@, xsize, ysize, init){
+		@->allocate(xsize, ysize)
+		if type(init) == 'table' { @->set(init) }
+	},
+	
+	/* メタテーブル */
+	operator = :{
+		__index = def(@, y){
+			if type(y) == 'number' {
+				if y >= 0 and y < @.ysize {
+					y = math.floor(y)
+					if @.data[y] == nil {
+						@.data[y] = Array(@.xsize)
+						return @.data[y]
+					}else{
+						return @.data[y]
+					}
+				}
+			}else{
+				return rawget(@, y)
+			}
+		},
+	},
+	
+	/* テーブルで配列セット */
+	set = def(@, tbl){
+		for y = 1, #tbl {
+			for x = 1, #tbl[y] { @[y-1][x-1] = tbl[y][x] }
+		}
+	},
+	
+	/* 配列クリア */
+	clear = def(@){
+		@.data = :{}
+	},
+	
+	/* 配列サイズ変更 */
+	allocate = def(@, xsize, ysize){
+		@->clear()
+		@.xsize, @.ysize = xsize or 0, ysize or 0
+	},
+	resizeY = def(@, ysize){
+		ysize = ysize or 0
+		if ysize < @.ysize {
+			for y = ysize, @.ysize-1 { @.data[y] = nil }
+		}
+		@.ysize = ysize
+	},
+	resizeX = def(@, xsize){
+		xsize = xsize or 0
+		for y = 0, @.ysize-1 { @[y]->resize(xsize) }
+	},
+	resize = def(@, xsize, ysize){
+		resizeY(ysize)
+		resizeX(xsize)
+	},
+}
+
+
+/*** 固定長3次元配列 ***/
+Array3D = class :{
+	/* コンストラクタ */
+	constructor = def(@, xsize, ysize, zsize, init){
+		@->allocate(xsize, ysize, zsize)
+		if type(init) == 'table' { @->set(init) }
+	},
+	
+	/* メタテーブル */
+	operator = :{
+		__index = def(@, z){
+			if type(z) == 'number' {
+				if z >= 0 and i < @.zsize {
+					z = math.floor(z)
+					if @.data[z] == nil {
+						@.data[z] = Array2D(@.xsize, @.ysize)
+						return @.data[z]
+					}else{
+						return @.data[z]
+					}
+				}
+			}else{
+				return rawget(@, z)
+			}
+		},
+	},
+	
+	/* テーブルで配列セット */
+	set = def(@, tbl){
+		for z = 1, #tbl {
+			for y = 1, #tbl[z] {
+				for x = 1, #tbl[z][y] { @[z-1][y-1][x-1] = tbl[z][y][x] }
+			}
+		}
+	},
+	
+	/* 配列クリア */
+	clear = def(@){
+		@.data = :{}
+	},
+	
+	/* 配列サイズ変更 */
+	allocate = def(@, xsize, ysize, zsize){
+		@->clear()
+		@.xsize, @.ysize, @.zsize = xsize or 0, ysize or 0, zsize or 0
+	},
+	resizeZ = def(@, zsize){
+		zsize = zsize or 0
+		if zsize < @.zsize {
+			for z = zsize, @.zsize-1 { @.data[z] = nil }
+		}
+		@.zsize = zsize
+	},
+	resizeY = def(@, ysize){
+		ysize = ysize or 0
+		for z = 0, @.zsize-1 { @[z]->resizeY(ysize) }
+	},
+	resizeX = def(@, xsize){
+		xsize = xsize or 0
+		for z = 0, @.zsize-1 { @[z]->resizeX(xsize) }
+	},
+	resize = def(@, xsize, ysize, zsize){
+		xsize, ysize = xsize or 0, ysize or 0
+		resizeZ(zsize)
+		for i = 0, @.zsize-1 { @[i]->resize(xsize, ysize) }
+	},
+}
